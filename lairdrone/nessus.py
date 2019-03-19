@@ -334,10 +334,10 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
                 # assume unhelpful prefix text if < 10 chars match
                 evidence_text = ""
                 for etxt, ehosts in data['evidence'].items():
-                    evidence_text += "{}:\n\n~~~\n{}\n~~~\n\n".format(", ".join(ehosts), etxt.strip())
+                    evidence_text += "{}:\n\n~~~\n{}\n~~~\n\n".format(", ".join([h.replace(" 0/tcp", "") for h in ehosts]), etxt.strip())
             else:
                 for etxt, ehosts in data['evidence'].items():
-                    evidence_text += "{}:\n\n~~~\n{}\n~~~\n\n".format(", ".join(ehosts), etxt.strip().lstrip(eprefix).strip())
+                    evidence_text += "{}:\n\n~~~\n{}\n~~~\n\n".format(", ".join([h.replace(" 0/tcp", "") for h in ehosts]), etxt.strip().lstrip(eprefix).strip())
 
         # Clean up Nessus, organize most specific to least
         evidence_text = evidence_text.replace("Nessus are", "Aeris are")
