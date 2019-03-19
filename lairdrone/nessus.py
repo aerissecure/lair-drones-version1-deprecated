@@ -167,8 +167,8 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
                     v['solution'] = solution.text
 
                 # Set the evidence
-                if evidence is not None:
-                    v['evidence'] = evidence.text
+                # if evidence is not None:
+                #     v['evidence'] = evidence.text
 
                 # Set the vulnerability flag if exploit exists
                 exploit = item.find('exploit_available')
@@ -280,8 +280,16 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
                 vuln_host_map[plugin_id] = dict()
                 vuln_host_map[plugin_id]['hosts'] = set()
                 vuln_host_map[plugin_id]['vuln'] = v
+                vuln_host_map[plugin_id]['evidence'] = dict()
 
             if plugin_id in vuln_host_map:
+                if evidence is not None:
+                    # Map host/port to shared plugin output
+                    if evidence.text not in vuln_host_map[plugin_id]['evidence']:
+                        vuln_host_map[plugin_id]['evidence'][evidence.text] = set()
+                    evidence_host = "{0} {1}/{2}".format(host_dict['string_addr'], str(port), protocol)
+                    vuln_host_map[plugin_id]['evidence'][evidence.text].add(evidence_host)
+
                 vuln_host_map[plugin_id]['hosts'].add(
                     "{0}:{1}:{2}".format(
                         host_dict['string_addr'],
@@ -305,6 +313,38 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
     # all vulnerable hosts to their vulnerability data within the
     # context of the expected Hive schema structure.
     for plugin_id, data in vuln_host_map.items():
+
+        # Process combined report text
+        evidence_text = ""
+        if len(data['evidence']) == 1:
+            tmptxt = data['evidence'].keys()[0].strip()
+            segments = tmptxt.split("\n\n")
+            if len(segments) >= 2:
+                prefix = segments[0].strip()
+                rest = "\n\n".join(segments[1:])
+                evidence_text = "{}\n\n~~~\n{}\n~~~\n".format(prefix, rest)
+            else:
+                evidence_text = tmptxt
+        if len(data['evidence']) > 1:
+            import os
+            eprefix = os.path.commonprefix(data['evidence'].keys()).strip().split("\n\n")[0]
+            # adding ":" back in here is ugly in that the match length check is what makes the rest of the code correct.
+            evidence_text = eprefix + "\n\n"
+            if len(eprefix) < 10:
+                # assume unhelpful prefix text if < 10 chars match
+                evidence_text = ""
+                for etxt, ehosts in data['evidence'].items():
+                    evidence_text += "{}:\n\n~~~\n{}\n~~~\n\n".format(", ".join(ehosts), etxt.strip())
+            else:
+                for etxt, ehosts in data['evidence'].items():
+                    evidence_text += "{}:\n\n~~~\n{}\n~~~\n\n".format(", ".join(ehosts), etxt.strip().lstrip(eprefix).strip())
+
+        # Clean up Nessus, organize most specific to least
+        print 'replacing: ', evidence_text
+        evidence_text = evidence_text.replace("Nessus collected", "We collected")
+        evidence_text = evidence_text.replace("Nessus elicited", "We elicited")
+        print 'output: ', evidence_text
+        data['vuln']['evidence'] = evidence_text
 
         # Build list of host and ports affected by vulnerability and
         # assign that list to the vulnerability model
