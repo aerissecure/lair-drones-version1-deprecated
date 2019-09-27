@@ -318,6 +318,8 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
         evidence_text = ""
         if len(data['evidence']) == 1:
             tmptxt = data['evidence'].keys()[0].strip()
+            # This splits the first text section (the intro) from the rest of the text (assumes \n\n between them) and sticks
+            # the remainder of the text in a fenced code block.
             segments = tmptxt.split("\n\n")
             if len(segments) >= 2:
                 prefix = segments[0].strip()
@@ -326,18 +328,64 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
             else:
                 evidence_text = tmptxt
         if len(data['evidence']) > 1:
+
+            # DEBUG STATEMENT
+            # if data['vuln']['title'] == 'lighttpd < 1.4.51 Multiple Vulnerabilities':
+            #     print data['evidence']
+
             import os
-            eprefix = os.path.commonprefix(data['evidence'].keys()).strip().split("\n\n")[0]
-            # adding ":" back in here is ugly in that the match length check is what makes the rest of the code correct.
-            evidence_text = eprefix + "\n\n"
-            if len(eprefix) < 10:
-                # assume unhelpful prefix text if < 10 chars match
-                evidence_text = ""
-                for etxt, ehosts in data['evidence'].items():
-                    evidence_text += "{}:\n\n~~~\n{}\n~~~\n\n".format(", ".join([h.replace(" 0/tcp", "") for h in ehosts]), etxt.strip())
+
+            # WARNING: do not use lstrip to remove a substring prefix, it may remove more than intended.
+            # Use these instead:
+            def remove_prefix(text, prefix):
+                if text.startswith(prefix):
+                    return text[len(prefix):]
+                return text
+
+            def remove_suffix(text, suffix):
+                if not suffix:
+                    return text
+                if text.endswith(suffix):
+                    return text[:-len(suffix)]
+                return text
+
+            # for a prefix to match it must meet the following:
+            # - end in a colon ':'
+            # - have two newlines after the colon '\n\n'
+            # The prefix we use will be everything through the colon
+
+            # check for common prefix that includes double newline
+            prefixes = os.path.commonprefix(data['evidence'].keys()).lstrip().split("\n\n")
+
+            if len(prefixes) > 1 and prefixes[0].rstrip().endswith(':'):
+                # DEBUG STATEMENT
+                # print '    PREFIX:', data['vuln']['title']
+                prefix = prefixes[0].rstrip()
+
+                evidence_text = prefix + '\n\n'
+                for txt, hosts in data['evidence'].items():
+                    hosts_out = ", ".join([h.replace(" 0/tcp", "") for h in hosts])
+                    # txt must be lstripped because result of commonprefix above is lstripped to ensure eligable prefix.
+                    txt_out = remove_prefix(txt.lstrip(), prefix)
+                    # only strip newlines so we don't de-indent the first entry in the output
+                    txt_out = txt_out.strip('\n')
+                    evidence_text += "{}:\n\n~~~\n{}\n~~~\n\n".format(hosts_out, txt_out)
+
             else:
-                for etxt, ehosts in data['evidence'].items():
-                    evidence_text += "{}:\n\n~~~\n{}\n~~~\n\n".format(", ".join([h.replace(" 0/tcp", "") for h in ehosts]), etxt.strip().lstrip(eprefix).strip())
+                # DEBUG STATEMENT
+                # print 'NON-PREFIX:', data['vuln']['title']
+                for txt, hosts in data['evidence'].items():
+                    hosts_out = ", ".join([h.replace(" 0/tcp", "") for h in hosts])
+                    # only strip newlines so we don't de-indent the first entry in the output
+                    txt_out = txt.strip('\n')
+                    evidence_text += "{}:\n\n~~~\n{}\n~~~\n\n".format(hosts_out, txt_out)
+
+        # Remove weird nessus convention of ended lines with 'blah :\n'
+        evidence_text = evidence_text.replace(' :\n\n', ':\n\n', 1)
+
+        # Remove weird nessus output starting with '. blah'
+        if evidence_text.startswith('. '):
+            evidence_text = evidence_text[2:]
 
         # Clean up Nessus, organize most specific to least
         evidence_text = evidence_text.replace("Nessus are", "Aeris are")
