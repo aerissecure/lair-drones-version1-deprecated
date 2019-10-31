@@ -161,6 +161,8 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
                 if description is not None:
                     # convert the weird 5 spaces into 1
                     v['description'] = description.text.replace('     ', ' ')
+                    # convert 3 spaces into 1, first seen on pluginID="121602"
+                    v['description'] = description.text.replace('   ', ' ')
 
                 # Set the solution
                 solution = item.find('solution')
