@@ -290,11 +290,11 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
                     # Map host/port to shared plugin output
                     if evidence.text not in vuln_host_map[plugin_id]['evidence']:
                         vuln_host_map[plugin_id]['evidence'][evidence.text] = set()
-                    evidence_host = "{0} {1}/{2}".format(host_dict['string_addr'], str(port), protocol)
+                    evidence_host = u"{0} {1}/{2}".format(host_dict['string_addr'], str(port), protocol)
                     vuln_host_map[plugin_id]['evidence'][evidence.text].add(evidence_host)
 
                 vuln_host_map[plugin_id]['hosts'].add(
-                    "{0}:{1}:{2}".format(
+                    u"{0}:{1}:{2}".format(
                         host_dict['string_addr'],
                         str(port),
                         protocol
@@ -318,7 +318,7 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
     for plugin_id, data in vuln_host_map.items():
 
         # Process combined report text
-        evidence_text = ""
+        evidence_text = u""
         if len(data['evidence']) == 1:
             tmptxt = data['evidence'].keys()[0].strip()
             # This splits the first text section (the intro) from the rest of the text (assumes \n\n between them) and sticks
@@ -326,8 +326,8 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
             segments = tmptxt.split("\n\n")
             if len(segments) >= 2:
                 prefix = segments[0].strip()
-                rest = "\n\n".join(segments[1:])
-                evidence_text = "{}\n\n~~~\n{}\n~~~\n".format(prefix, rest)
+                rest = u"\n\n".join(segments[1:])
+                evidence_text = u"{}\n\n~~~\n{}\n~~~\n".format(prefix, rest)
             else:
                 evidence_text = tmptxt
         if len(data['evidence']) > 1:
@@ -367,21 +367,21 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
 
                 evidence_text = prefix + '\n\n'
                 for txt, hosts in data['evidence'].items():
-                    hosts_out = ", ".join([h.replace(" 0/tcp", "") for h in hosts])
+                    hosts_out = u", ".join([h.replace(" 0/tcp", "") for h in hosts])
                     # txt must be lstripped because result of commonprefix above is lstripped to ensure eligable prefix.
                     txt_out = remove_prefix(txt.lstrip(), prefix)
                     # only strip newlines so we don't de-indent the first entry in the output
                     txt_out = txt_out.strip('\n')
-                    evidence_text += "{}:\n\n~~~\n{}\n~~~\n\n".format(hosts_out, txt_out)
+                    evidence_text += u"{}:\n\n~~~\n{}\n~~~\n\n".format(hosts_out, txt_out)
 
             else:
                 # DEBUG STATEMENT
                 # print 'NON-PREFIX:', data['vuln']['title']
                 for txt, hosts in data['evidence'].items():
-                    hosts_out = ", ".join([h.replace(" 0/tcp", "") for h in hosts])
+                    hosts_out = u", ".join([h.replace(" 0/tcp", "") for h in hosts])
                     # only strip newlines so we don't de-indent the first entry in the output
                     txt_out = txt.strip('\n')
-                    evidence_text += "{}:\n\n~~~\n{}\n~~~\n\n".format(hosts_out, txt_out)
+                    evidence_text += u"{}:\n\n~~~\n{}\n~~~\n\n".format(hosts_out, txt_out)
 
         # Remove weird nessus convention of ended lines with 'blah :\n'
         evidence_text = evidence_text.replace(' :\n\n', ':\n\n', 1)
