@@ -5,12 +5,12 @@
 import xml.etree.ElementTree as et
 import re
 import copy
+import requests
 from lairdrone import drone_models as models
 from lairdrone import helper
 
 OS_WEIGHT = 75
 TOOL = "nessus"
-
 
 def parse(project, nessus_file, include_informational=False, min_note_sev=2):
     """Parses a Nessus XMLv2 file and updates the Hive database
@@ -149,6 +149,7 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
 
                 v = copy.deepcopy(models.vulnerability_model)
                 v['cves'] = list()
+                v['seealsos'] = list()
                 v['plugin_ids'] = list()
                 v['identified_by'] = list()
                 v['hosts'] = list()
@@ -168,6 +169,22 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
                 solution = item.find('solution')
                 if solution is not None:
                     v['solution'] = solution.text
+
+                # Append see_also references to solution
+                see_also = item.findall('see_also')
+                if len(see_also) > 0:
+                    if 'solution' not in v:
+                        v['solution'] = 'Additional Resources:\n\n'
+                    else:
+                        v['solution'] += '\n\nAdditional Resources:\n'
+                    for sa in see_also:
+                        for link in sa.text.split('\n'):
+                            if 'nessus.org' in link:
+                                resp = requests.get(link)
+                                if resp.ok:
+                                    link = resp.url
+
+                            v['solution'] += "\n- " + link
 
                 # Set the evidence
                 # if evidence is not None:
