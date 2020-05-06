@@ -191,10 +191,10 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
                                     print('omitting link {} which failed to resolve: {}\n'.format(link, str(e)))
                                     continue
 
-                                v['solution'] += "\n- " + reslink
+                                v['solution'] += "\n- <" + reslink + ">"
 
                             else:
-                                v['solution'] += "\n- " + link
+                                v['solution'] += "\n- <" + link + ">"
 
                 # Set the evidence
                 # if evidence is not None:
