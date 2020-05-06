@@ -180,11 +180,21 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
                     for sa in see_also:
                         for link in sa.text.split('\n'):
                             if 'nessus.org' in link:
-                                resp = requests.get(link)
-                                if resp.ok:
-                                    link = resp.url
+                                reslink = link
+                                try:
+                                    # Lookups do not need to be cached since drone
+                                    # only parses each unique vuln plugin once.
+                                    resp = requests.get(link)
+                                    if resp.ok:
+                                        reslink = resp.url
+                                except Exception as e:
+                                    print('omitting link {} which failed to resolve: {}\n'.format(link, str(e)))
+                                    continue
 
-                            v['solution'] += "\n- " + link
+                                v['solution'] += "\n- " + reslink
+
+                            else:
+                                v['solution'] += "\n- " + link
 
                 # Set the evidence
                 # if evidence is not None:
