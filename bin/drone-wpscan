@@ -1,0 +1,223 @@
+#!/usr/bin/env python2
+# Copyright (c) 2013 Tom Steele, Dan Kottmann, FishNet Security
+# See the file license.txt for copying permission
+
+import os
+import sys
+import re
+from HTMLParser import HTMLParser
+import json
+
+sys.path.append(os.path.abspath(
+    os.path.join(os.path.dirname(__file__), '..'))
+)
+
+from optparse import OptionParser
+from urlparse import urlparse
+import urllib
+from lairdrone import api, drone_models as models
+from lairdrone import helper
+from distutils.version import LooseVersion
+
+
+OS_WEIGHT = 0
+TOOL = "wpscan"
+
+
+description_tpl = '''According to the version number we were able to identify through fingerprinting activities, the WordPress application running on the remote web server is affected by multiple vulnerabilities:
+
+%s'''
+
+evidence_tpl = '''```
+Target URL:    %s
+Version:       %s
+Release Date:  %s
+Confidence:    %s
+Fixed Version: %s
+```'''
+
+def get_cves(cve_ids):
+    url = "https://raw.githubusercontent.com/olbat/nvdcve/master/nvdcve/%s.json"
+
+    cves = []
+    for cve in cve_ids:
+        print 'fetching %s' % cve
+        response = urllib.urlopen(url % cve)
+        data = json.loads(response.read())
+        cves.append(data)
+
+    return cves
+
+def parse(project_id, wpscan_json_file, db, options):
+    """Parses a WPScan file and updates the Lair database
+
+    :param project: The project id
+    :param wpscan_json_file: The WPScan json file to be parsed
+    :param db: A database connection
+    """
+
+    file = open(wpscan_json_file)
+    doc = json.load(file)
+
+    # Create the project dictionary which acts as foundation of document
+    project = dict(models.project_model)
+    project['commands'] = list()
+    project['vulnerabilities'] = list()
+    project['project_id'] = project_id
+
+    # Temp dicts used to ensure no duplicate hosts or ports are added
+    temp_vulns = dict()
+    temp_hosts = list()
+
+    command = dict(models.command_model)
+    command['tool'] = TOOL
+    command['command'] = 'wpscan'
+    project['commands'].append(command)
+
+    if not doc['version']['vulnerabilities']:
+        print 'no vulnerabilities'
+        exit(0)
+
+    fixed_vers = []
+    cve_ids = []
+    vulns = []
+    for v in doc['version']['vulnerabilities']:
+        if v.get('fixed_in'):
+            fixed_vers.append(v['fixed_in'])
+
+        vuln_cve_ids = []
+        if v['references']['cve']:
+            for cve in v['references']['cve']:
+                cve_ids.append("CVE-%s" % cve)
+                vuln_cve_ids.append("CVE-%s" % cve)
+
+        urls = []
+        if v['references']['url']:
+            for url in v['references']['url']:
+                urls.append(url)
+
+        # assumes format: WordPress <= 4.9.6 - Authenticated Arbitrary File Deletion
+        txt = v['title'] + '.'
+        if vuln_cve_ids:
+            txt += ' (%s)' % ', '.join(['[%s](https://nvd.nist.gov/vuln/detail/%s)' % (cve, cve) for cve in vuln_cve_ids ])
+        if urls:
+            txt += ' References: %s' % ', '.join(['[%s](%s)' % (urlparse(url).hostname, url) for url in urls])
+
+        vulns.append(txt)
+
+
+    sorted(fixed_vers, key=LooseVersion)
+    less_ver = fixed_vers[0]
+    fixed_ver = fixed_vers[-1]
+
+    cvss = 0
+    cves = get_cves(cve_ids)
+    for cve in cves:
+        if cve.get('impact') and cve['impact'].get('baseMetricV2') and cve['impact']['baseMetricV2'].get('cvssV2') and cve['impact']['baseMetricV2']['cvssV2'].get('baseScore'):
+            base_score = cve['impact']['baseMetricV2']['cvssV2']['baseScore']
+            if base_score > cvss:
+                cvss = base_score
+
+    v = dict(models.vulnerability_model)
+    v['cves'] = list()
+    v['plugin_ids'] = list()
+    v['identified_by'] = list()
+    v['hosts'] = list()
+    v['notes'] = list()
+
+    v['title'] = 'WordPress < %s Multiple Vulnerabilities' % less_ver
+    v['cves'] = cve_ids
+    v['cvss'] = cvss
+    v['description'] = description_tpl % '\n'.join(['- %s' % vuln for vuln in vulns]),
+    v['evidence'] = evidence_tpl % (
+        doc['target_url'],
+        doc['version']['number'],
+        doc['version']['release_date'],
+        doc['version']['confidence'],
+        fixed_ver,
+    )
+    v['solution'] = 'Updated to the latest version of WordPress, or the referenced fixed version.'
+    # v['tags'] = ['cat:network']
+
+    # Set plugin
+    plugin_id = 'wpscan-' + doc['version']['number']
+    plugin = dict(models.plugin_id_model)
+    plugin['tool'] = TOOL
+    plugin['id'] = 'wpscan-' + doc['version']['number']
+    v['plugin_ids'].append(plugin)
+
+    # Set identified by information
+    identified = dict(models.identified_by_model)
+    identified['tool'] = TOOL
+    identified['id'] = plugin_id
+    v['identified_by'].append(identified)
+
+    # Parse url to get port and hostname
+    url = urlparse(doc['target_url'])
+    port = 80
+    if url.port:
+        port = url.port
+    elif url.scheme == 'https':
+        port = 443
+
+    # Associate host with vuln
+    host_key_dict = dict(models.host_key_model)
+    host_key_dict['string_addr'] = doc['target_ip']
+    host_key_dict['port'] = port
+    v['hosts'].append(host_key_dict)
+    tag = 'dhostname:%s->%s:%s/tcp' % (url.hostname, doc['target_ip'], port)
+    v['tags'] = [tag]
+
+    # Create host
+    host = dict(models.host_model)
+    host['os'] = list() # no OS
+    host['ports'] = list()
+    host['hostnames'] = list()
+
+    host['string_addr'] = doc['target_ip']
+    host['long_addr'] = helper.ip2long(doc['target_ip'])
+
+    if url.hostname:
+        host['hostnames'].append(url.hostname)
+
+    # Create port and associate with host
+    port_dict = dict(models.port_model)
+    port_dict['port'] = port
+    port_dict['protocol'] = models.PROTOCOL_TCP
+    port_dict['service'] = url.scheme
+    host['ports'].append(port_dict)
+
+    # Don't set an OS
+    os_dict = dict(models.os_model)
+    os_dict['tool'] = TOOL
+    host['os'].append(os_dict)
+
+    project['vulnerabilities'] = [v]
+    project['hosts'] = [host]
+
+    print project
+
+    return project
+
+if __name__ == '__main__':
+
+    usage = "usage: %prog <project_id> <file>"
+    description = "%prog imports WPScan json files into Lair"
+
+    parser = OptionParser(usage=usage, description=description,
+                          version="%prog 0.0.1")
+
+    (options, args) = parser.parse_args()
+
+    if len(args) != 2:
+        print parser.get_usage()
+        exit(1)
+
+    # Connect to the database
+    db = api.db_connect()
+
+    project = parse(args[0], args[1], db, options)
+
+    api.save(project, db, TOOL)
+
+    exit(0)
