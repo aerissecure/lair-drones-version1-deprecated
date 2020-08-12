@@ -24,6 +24,21 @@ from lairdrone import helper
 OS_WEIGHT = 75
 TOOL = "burp"
 
+burp_issue_model = {
+    'name': '',
+    'issue_background': '',
+    'issue_detail': '',
+    'remediation_background': '',
+    'vulnerability_classifications': [],
+    'references': [],
+    'ip': '',
+    'port': 0,
+    'url': '', # https://api.example.com
+    'scheme': '', # https
+    'hostname': '', # api.example.com
+    'path': '',
+    'severity': '',
+}
 
 class MLStripper(HTMLParser):
     def __init__(self):
@@ -40,6 +55,252 @@ def strip_tags(html):
     txt = s.get_data().strip()
     txt = re.sub('\n\n\n(\s*)', '\n\n', txt)
     return txt
+
+# add_issue_hosts adds the host for each issue in the list of issues to the vuln.
+def add_issue_hosts(vuln, issues):
+    for issue in issues:
+        host_key_dict = dict(models.host_key_model)
+        host_key_dict['string_addr'] = issue['ip']
+        host_key_dict['port'] = issue['port']
+
+        # Check if host/port is already associated with vuln, add if not
+        if host_key_dict not in vuln['hosts']:
+            vuln['hosts'].append(host_key_dict)
+
+# merge_hosts merges hosts from the src list of hosts into the dst list.
+def merge_hosts(dst, src):
+    for shost in src:
+        has_host = False
+        for dhost in dst:
+            if shost['string_addr'] == dhost['string_addr']:
+                has_host = True
+
+                if not dhost.get('os'):
+                    dhost['os'] = shost['os']
+
+                for p in shost['ports']:
+                    has_port = False
+                    for dp in dhost['ports']:
+                        if p['port'] == dp['port']:
+                            has_port = True
+
+                    if not has_port:
+                        dhost['ports'].append(p)
+
+                has_hostname = False
+                for h in shost['hostnames']:
+                    for dh in dhost['hostnames']:
+                        if h == dh:
+                            has_hostname = True
+
+                    if not has_hostname:
+                        dhost['hostnames'].append(h)
+
+                # TODO: handle notes
+
+        if not has_host:
+            dst.append(shost)
+
+
+# get_issue_hosts gets a list of models.host_model's from the list of issues, one per issue.  These
+# must be de-duped later.
+def get_issue_hosts(issues):
+    hosts = list()
+    for issue in issues:
+        host = dict(models.host_model)
+        host['os'] = list() # no OS
+        host['ports'] = list()
+        host['hostnames'] = list()
+
+        if issue['ip'] == '':
+            raise Exception('issue has blank ip')
+
+        host['string_addr'] = issue['ip']
+        host['long_addr'] = helper.ip2long(issue['ip'])
+
+        port = dict(models.port_model)
+        port['port'] = issue['port']
+        port['protocol'] = models.PROTOCOL_TCP
+        port['service'] = issue['scheme']
+        host['ports'].append(port)
+
+        # Don't set an OS
+        os_dict = dict(models.os_model)
+        os_dict['tool'] = TOOL
+        host['os'].append(os_dict)
+
+        merge_hosts(hosts, [host])
+
+    return hosts
+
+
+def get_severity(severity):
+    if severity == 'High':
+        return 10.0
+    if severity == 'Medium':
+        return 5.0
+    if severity == 'Low':
+        return 3.0
+    return 0.0
+
+def process_retirejs(plugin_id, issues):
+    v = dict(models.vulnerability_model)
+
+    v['title'] = 'Use of Components with Known Vulnerabilities'
+    v['cvss'] = 6.5
+    v['description'] = '''We identified third-party software components that have known vulnerabilities in the versions in use.
+
+Third party software components are frequently used in the creation of software. They provide functionality that the application creators would otherwise need to write themselves. Third party software components are frequently, but not exclusively, open source and can have a wide range of quality, bug reporting, and security practices.
+
+Security vulnerabilities in third-party software components can expose the parent application to security issues. The full range of weaknesses is possible, including injection, broken access control, XSS, etc. The impact could range from minimal to complete host takeover and data compromise.
+
+Tracking weaknesses in software applications can be a difficult task. Vulnerability reports for commercial or open source software do not always specify exactly which versions of a component are vulnerable in a standard, searchable way. Further, not all libraries use an understandable version numbering system and many do not report to a central clearinghouse such as CVE and NVD.'''
+    v['solution'] = '''Update the affected components to the latest secure version.
+
+The projects for most software components or libraries do not create vulnerability patches for old versions. Instead, most simply fix the problem in the next release. Therefore, upgrading to these new versions is critical.
+
+One option for mitigation is to not use components that you didn't write. Because this is usually not a realistic option, software projects should have a process in place to:
+
+1. Identify all components and the versions you are using, including all dependencies. (e.g., the versions plugin).
+2. Monitor the security of these components in public databases, project mailing lists, and security mailing lists, and keep them up to date.
+3. Establish security policies governing component use, such as requiring certain software development practices, passing security tests, and acceptable licenses.
+4. Where appropriate, consider adding security wrappers around components to disable unused functionality and/ or secure weak or vulnerable aspects of the component.
+
+Services such as [snyk.io](https://snyk.io/) can help manage many aspects of this process.
+
+For more background on the dangers posed by software dependencies in general, see this blog post by Russ Cox: [research.swtch.com/deps](https://research.swtch.com/deps).'''
+
+    v['tags'] = ['cat:application']
+
+    plugin_dict = dict(models.plugin_id_model)
+    plugin_dict['tool'] = TOOL
+    plugin_dict['id'] = plugin_id
+    v['plugin_ids'].append(plugin_dict)
+
+    retirejs_detail = re.compile(r'The library <b>(?P<library>[^<]+)</b> version <b>(?P<version>[^<]+)</b>.*\n.*\n.*\n.*\n<ul>\n(?P<urls>(.*\n)+)</ul>\n.*\n.*\n.*\nThe vulnerability is affecting all versions prior <b>(?P<before>[^<]+)</b> \(between <b>(?P<from>[^<]+)</b> and <b>(?P<to>[^<]+)</b>\)')
+    href = re.compile('href="([^"]+)"')
+
+    libraries = dict() # '<library>-<version>': {'groupdict': {}, 'issues': []}
+
+    for issue in issues:
+        tag = 'dhostname:%s->%s:%s/tcp' % (issue['hostname'], issue['ip'], issue['port'])
+        has_tag = False
+        for t in v['tags']:
+            if t == tag:
+                has_tag = True
+        if not has_tag:
+            v['tags'].append(tag)
+
+        m = retirejs_detail.search(issue['issue_detail'])
+        if m is None:
+            raise Exception("retirejs issue detail doesn't match regex")
+
+        gd = m.groupdict()
+
+        libkey = '%s-%s' % (gd['library'], gd['version'])
+        if libkey not in libraries:
+            libraries[libkey] = {'groupdict': gd, 'issues': []}
+        libraries[libkey]['issues'].append(issue)
+
+    # NOTE: I am omitting the component url for now, since we don't know what it is.
+    detail_tpl = '''The library **%s** version **%s** is in use and has known security issues. The vulnerabilities affect all versions %s.
+
+We identified the following affected pages, though there are likely more:
+
+%s
+
+More details can be found in the following issue disclosures:
+
+%s'''
+
+    # each unique library gets its own output
+
+    for library in libraries.values():
+        libdict = library['groupdict']
+        version_range = 'between **%s** and **%s**' % (libdict['from'], libdict['to'])
+        if libdict['from'] == '*':
+            version_range = 'prior to **%s**' % libdict['to']
+
+        pages = []
+        for issue in library['issues']:
+            pages.append(issue['url'] + issue['path'])
+
+        disclosures = []
+        for url in libdict['urls'].split():
+            m = href.search(url)
+            if m is not None and len(m.groups()) > 0:
+                disclosures.append(m.group(1))
+
+        evidence = detail_tpl % (
+            libdict['library'],
+            libdict['version'],
+            version_range,
+            '\n'.join(['- ' + page for page in pages]),
+            '\n'.join(['- <%s>' % disc for disc in disclosures]),
+        )
+
+        if v['evidence']:
+            v['evidence'] += '\n\n---\n\n'
+
+        v['evidence']+= evidence
+
+    # we would pass a filtered list of issues if we were weeding some out
+    add_issue_hosts(v, issues)
+    return v, get_issue_hosts(issues)
+
+
+def process_default(plugin_id, issues):
+    # add in hostnames
+    # for details, add in the issue path, followed by the unique content, but group by matching content.
+    v = dict(models.vulnerability_model)
+
+    v['title'] = issues[0]['name'].title()
+    v['cvss'] = get_severity(issues[0]['severity'])
+    v['description'] = strip_tags(issues[0]['issue_background']).replace('\n', '\n\n')
+    v['solution'] = strip_tags(issues[0]['remediation_background']).replace('\n', '\n\n')
+    if issues[0]['references']:
+        v['solution'] += '\n\nAdditional Resources:\n\n'
+        v['solution'] +=  '\n'.join(['- <%s>' % ref for ref in issues[0]['references']])
+
+
+    v['tags'] = ['cat:application']
+
+    plugin_dict = dict(models.plugin_id_model)
+    plugin_dict['tool'] = TOOL
+    plugin_dict['id'] = plugin_id
+    v['plugin_ids'].append(plugin_dict)
+
+    evidences = {} # issue_detail: [issue]
+    for issue in issues:
+        tag = 'dhostname:%s->%s:%s/tcp' % (issue['hostname'], issue['ip'], issue['port'])
+        has_tag = False
+        for t in v['tags']:
+            if t == tag:
+                has_tag = True
+        if not has_tag:
+            v['tags'].append(tag)
+
+        if issue['issue_detail'] not in evidences:
+            evidences[issue['issue_detail']] = []
+
+        has_issue = False
+        for ei in evidences[issue['issue_detail']]:
+            if ei['url'] == issue['url']:
+                has_issue = True
+
+        if not has_issue:
+            evidences[issue['issue_detail']].append(issue)
+
+    for evidence, evid_issues in evidences.items():
+        if v['evidence']:
+            v['evidence'] += '\n\n---\n\n'
+
+        v['evidence'] += '%s:\n\n' % ', '.join([issue['url'] + issue['path'] for issue in evid_issues])
+        v['evidence'] += strip_tags(evidence.strip()).replace('\n', '\n\n')
+
+    add_issue_hosts(v, issues)
+    return v, get_issue_hosts(issues)
+
 
 def parse(project, burp_file, db, options):
     """Parses a Burp file and updates the Lair database
@@ -72,174 +333,96 @@ def parse(project, burp_file, db, options):
     command_dict['command'] = 'Active scan'
     project_dict['commands'].append(command_dict)
 
-    for issue in root.iter('issue'):
+    # Group vuln instances by their plugin_id
+    temp_issues = dict()
 
-        v = dict(models.vulnerability_model)
-        v['cves'] = list()
-        v['plugin_ids'] = list()
-        v['identified_by'] = list()
-        v['hosts'] = list()
-        v['notes'] = list()
+    for issue_elem in root.iter('issue'):
+        issue = dict(burp_issue_model)
+        issue['references'] = list()
+        issue['vulnerability_classifications'] = list()
 
-        # Set CVSS
-        severity = issue.find('severity')
-        if severity is not None:
-            s = severity.text
-            if s == 'High':
-                v['cvss'] = 10.0
-            # TODO: Confirm literal 'Medium' in XML file
-            elif s == 'Medium':
-                v['cvss'] = 5.0
-            elif s == 'Low':
-                v['cvss'] = 3.0
-            else:
-                v['cvss'] = 0.0
-
-        # Set title
-        name = issue.find('name')
+        name = issue_elem.find('name')
         if name is not None:
-            v['title'] = name.text
+            issue['name'] = name.text
 
-        # Set plugin
-        plugin_elem = issue.find('type')
-        if plugin_elem is not None:
-            plugin_id = plugin_elem.text
+        issue_background = issue_elem.find('issueBackground')
+        if issue_background is not None:
+            # don't strip here, we need original for regex matches in post processing
+            issue['issue_background'] = issue_background.text
 
-        plugin_dict = dict(models.plugin_id_model)
-        plugin_dict['tool'] = TOOL
-        plugin_dict['id'] = plugin_id
-        v['plugin_ids'].append(plugin_dict)
+        issue_detail = issue_elem.find('issueDetail')
+        if issue_detail is not None:
+            issue['issue_detail'] = issue_detail.text
 
-        # Set identified by information
-        identified_dict = dict(models.identified_by_model)
-        identified_dict['tool'] = TOOL
-        identified_dict['id'] = plugin_id
-        v['identified_by'].append(identified_dict)
+        remediation_background = issue_elem.find('remediationBackground')
+        if remediation_background is not None:
+            issue['remediation_background'] = remediation_background.text
 
-        # Search for solution
-        solution = issue.find('remediationBackground')
-        if solution is not None:
-            v['solution'] = solution.text
+        classifications = issue_elem.find('vulnerabilityClassifications')
+        if classifications is not None:
+            issue['vulnerability_classifications'] = classifications.text
 
-        # Search for description
-        description = issue.find('issueBackground')
-        if description is not None:
-            v['description'] = description.text
+        references = issue_elem.find('references')
+        if references is not None:
+            for ref in references.text.split('href="'):
+                if ref.find('"') != -1:
+                    issue['references'].append(ref[0:ref.index('"')])
 
-        # Search for evidence
-        evidence = issue.find('issueDetail')
-        if evidence is not None:
-            v['evidence'] = strip_tags(evidence.text)
-            evidence = strip_tags(evidence.text)
-
-        if plugin_id not in temp_vulns:
-            # New vulnerability not already identified
-            # By default, don't include informational findings unless
-            # explicitly told to do so.
-            if v['cvss'] == 0 and not options.include_informational:
-                continue
-            temp_vulns[plugin_id] = v
-
-        host_dict = dict(models.host_model)
-        host_dict['os'] = list()
-        host_dict['ports'] = list()
-        host_dict['hostnames'] = list()
-
-        # Used later for adding a note to specify location of vulnerability
-        # on the server.
-        path = ''
-        path_elem = issue.find('path')
-        if path_elem is not None:
-            path = path_elem.text
-
-        # Search for host element
-        host_elem = issue.find('host')
+        host_elem = issue_elem.find('host')
         if host_elem is not None:
-            string_addr = host_elem.attrib['ip']
-            # Occasionally, host name is present but no IP address. Ignore
-            # those findings.
-            if not string_addr:
-                continue
+            issue['ip'] = host_elem.attrib['ip']
+            issue['url'] = host_elem.text
+            issue['port'] = 80
 
-            long_addr = helper.ip2long(string_addr)
-            host_dict['string_addr'] = string_addr
-            host_dict['long_addr'] = long_addr
+            url = urlparse(host_elem.text)
+            issue['scheme'] = url.scheme
+            issue['hostname'] = url.hostname
+            if url.port:
+                issue['port'] = url.port
+            if url.scheme == 'https':
+                issue['port'] = 443
 
-            # Determine port
-            port_dict = dict(models.port_model)
-            port_dict['port'] = 80
-            port_dict['protocol'] = models.PROTOCOL_TCP
+        path = issue_elem.find('path')
+        if path is not None:
+            issue['path'] = path.text
 
-            result = urlparse(host_elem.text)
+        severity = issue_elem.find('severity')
+        if severity is not None:
+            issue['severity'] = severity.text
 
-            # Determine if service is http or https
-            if result.port:
-                port_dict['port'] = result.port
-            else:
-                if result.scheme == 'https':
-                    port_dict['port'] = 443
+        type_elem = issue_elem.find('type')
+        if type_elem is not None:
+            plugin_id = type_elem.text
 
-            if result.scheme == 'https':
-                port_dict['service'] = 'https'
-            else:
-                port_dict['service'] = 'http'
+        if plugin_id not in temp_issues:
+            temp_issues[plugin_id] = []
 
-            # Grab the hostname
-            if result.hostname:
-                host_dict['hostnames'].append(result.hostname)
+        temp_issues[plugin_id].append(issue)
 
-            # Add a note regarding vulnerable path
-            if path:
-                content = host_elem.text + path
+    temp_vulns = list() # [models.vulnerability_model]
+    temp_hosts = list() # [models.host_model]
 
-                # Include evidence in the note as many times this includes
-                # specific paramaters and test strings that ultimately will
-                # make it easier to validate from the UI
-                if evidence:
-                    content += "\n" + evidence
+    for plugin_id, issues in temp_issues.items():
+        # issues shouldn't be handling hosts. We're going to map from
 
-                note_dict = dict(models.note_model)
-                note_dict['title'] = 'Details'
-                note_dict['content'] = content
-                v['notes'].append(note_dict)
+        if issue['severity'] == 'Information' and not options.include_informational:
+            continue
 
-            host_dict['ports'].append(port_dict)
+        # handle special cases:
+        if issues[0]['name'].startswith('Vulnerable version of the library'):
+            vuln, hosts = process_retirejs(plugin_id, issues)
+            # hosts must be already added to vuln as models.host_key_model, v['hosts']
 
-            # Don't set an OS
-            os_dict = dict(models.os_model)
-            os_dict['tool'] = TOOL
-            host_dict['os'].append(os_dict)
+        else:
+            vuln, hosts = process_default(plugin_id, issues)
 
-            # Check if host/port is already associated with project.
-            found_host = False
-            for h in temp_hosts:
-                if h['string_addr'] == string_addr:
-                    found_host = True
+        # vuln will be unique
+        temp_vulns.append(vuln)
 
-                    found_port = False
-                    for p in h['ports']:
-                        if p['port'] == port_dict['port']:
-                            # Do nothing as host/port is in the list already
-                            found_port = True
+        # only add hosts if they are unique:
+        merge_hosts(temp_hosts, hosts)
 
-                    # Did not find port, add it
-                    if not found_port:
-                        h['ports'].append(port_dict)
-
-            # Host has not yet been encountered
-            if not found_host:
-                temp_hosts.append(host_dict)
-
-            host_key_dict = dict(models.host_key_model)
-            host_key_dict['string_addr'] = string_addr
-            host_key_dict['port'] = port_dict['port']
-
-            # Check if host/port is already associated with vuln, add if not
-            if plugin_id in temp_vulns and \
-                    host_key_dict not in temp_vulns[plugin_id]['hosts']:
-                temp_vulns[plugin_id]['hosts'].append(host_key_dict)
-
-    project_dict['vulnerabilities'] = temp_vulns.values()
+    project_dict['vulnerabilities'] = temp_vulns
     project_dict['hosts'] = temp_hosts
 
     return project_dict
