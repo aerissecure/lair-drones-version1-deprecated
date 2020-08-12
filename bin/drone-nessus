@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 # Copyright (c) 2013 Tom Steele, Dan Kottmann, FishNet Security
 # See the file license.txt for copying permission
 
