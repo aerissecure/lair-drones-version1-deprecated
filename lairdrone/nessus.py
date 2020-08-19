@@ -12,6 +12,8 @@ from lairdrone import helper
 OS_WEIGHT = 75
 TOOL = "nessus"
 
+NESSUS_REPLACEMENT = "The testing team"
+
 def parse(project, nessus_file, include_informational=False, min_note_sev=2):
     """Parses a Nessus XMLv2 file and updates the Hive database
 
@@ -46,6 +48,8 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
         host_dict['ports'] = list()
         host_dict['hostnames'] = list()
 
+        target_hostname = None
+
         # Tags contain host-specific information
         for tag in host.iter('tag'):
 
@@ -61,6 +65,10 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
             if tag.attrib['name'] == 'host-ip':
                 host_dict['string_addr'] = tag.text
                 host_dict['long_addr'] = helper.ip2long(tag.text)
+
+                # If hostname was used for target, safe it for later use
+                if tag.text != temp_ip:
+                    target_hostname = temp_ip
 
             # MAC address tag
             if tag.attrib['name'] == 'mac-address':
@@ -161,14 +169,18 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
                 description = item.find('description')
                 if description is not None:
                     # convert the weird 5 spaces into 1
-                    v['description'] = description.text.replace('     ', ' ')
+                    description_text = description.text.replace('     ', ' ')
                     # convert 3 spaces into 1, first seen on pluginID="121602"
-                    v['description'] = description.text.replace('   ', ' ')
+                    description_text = description_text.replace('   ', ' ')
+
+                    description_text = description_text.replace("Nessus", NESSUS_REPLACEMENT)
+                    v['description'] = description_text
 
                 # Set the solution
                 solution = item.find('solution')
                 if solution is not None:
-                    v['solution'] = solution.text
+                    solution_text = solution.text.replace("Nessus", NESSUS_REPLACEMENT)
+                    v['solution'] = solution_text
 
                 # Append see_also references to solution
                 see_also = item.findall('see_also')
@@ -188,7 +200,7 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
                                     if resp.ok:
                                         reslink = resp.url
                                 except Exception as e:
-                                    print('omitting link {} which failed to resolve: {}\n'.format(link, str(e)))
+                                    print('Omitting link "{}" which failed to resolve: {}\n'.format(link, str(e)))
                                     continue
 
                                 v['solution'] += "\n- <" + reslink + ">"
@@ -328,6 +340,15 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
                     )
                 )
 
+            if not vuln_host_map[plugin_id].get('tags'):
+                vuln_host_map[plugin_id]['vuln']['tags'] = []
+
+            if target_hostname:
+                # to use dhostname instead of hostname, we'd need to know that the IP
+                # wasn't explicitly scanned also.
+                htag = "hostname:%s->%s:%s/%s" % (target_hostname, host_dict['string_addr'], port, protocol)
+                vuln_host_map[plugin_id]['vuln']['tags'].append(htag)
+
         # In the event no IP was found, use the 'name' attribute of
         # the 'ReportHost' element
         if not host_dict['string_addr']:
@@ -417,45 +438,7 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
         if evidence_text.startswith('. '):
             evidence_text = evidence_text[2:]
 
-        # Clean up Nessus, organize most specific to least
-        evidence_text = evidence_text.replace("Nessus are", "Aeris are")
-        evidence_text = evidence_text.replace("Nessus CA", "Aeris CA")
-        evidence_text = evidence_text.replace("Nessus can", "We can")
-        evidence_text = evidence_text.replace("Nessus Cannot", "We cannot")
-        evidence_text = evidence_text.replace("Nessus collected", "We collected")
-        evidence_text = evidence_text.replace("Nessus could", "We could")
-        evidence_text = evidence_text.replace("Nessus detected", "We detected")
-        evidence_text = evidence_text.replace("Nessus determined", "We determined")
-        evidence_text = evidence_text.replace("Nessus did", "We did")
-        evidence_text = evidence_text.replace("Nessus discovered", "We discovered")
-        evidence_text = evidence_text.replace("Nessus does", "We do")
-        evidence_text = evidence_text.replace("Nessus either does not", "We either do not")
-        evidence_text = evidence_text.replace("Nessus elicited", "We elicited")
-        evidence_text = evidence_text.replace("Nessus encountered", "We encountered")
-        evidence_text = evidence_text.replace("Nessus failed", "we failed")
-        evidence_text = evidence_text.replace("Nessus found", "we found")
-        evidence_text = evidence_text.replace("Nessus gathered", "We gathered")
-        evidence_text = evidence_text.replace("Nessus got", "we got")
-        evidence_text = evidence_text.replace("Nessus harvested", "We harvested")
-        evidence_text = evidence_text.replace("Nessus has", "We have")
-        evidence_text = evidence_text.replace("Nessus host", "testing host")
-        evidence_text = evidence_text.replace("Nessus is", "Aeris is")
-        evidence_text = evidence_text.replace("Nessus negotiated", "We negotiated")
-        evidence_text = evidence_text.replace("Nessus only", "we only")
-        evidence_text = evidence_text.replace("Nessus performs", "we perform")
-        evidence_text = evidence_text.replace("Nessus received", "We received")
-        evidence_text = evidence_text.replace("Nessus regards", "We regard")
-        evidence_text = evidence_text.replace("on which Nessus resides", "on which our testing host resides")
-        evidence_text = evidence_text.replace("Nessus retrieved", "We retrieved")
-        evidence_text = evidence_text.replace("Nessus sent", "We sent")
-        evidence_text = evidence_text.replace("Nessus SNMP scanner", "Our SNMP scanner")
-        evidence_text = evidence_text.replace("Nessus tried", "we tried")
-        evidence_text = evidence_text.replace("Nessus used", "we used")
-        evidence_text = evidence_text.replace("Nessus verified", "We verified")
-        evidence_text = evidence_text.replace("Nessus was", "We were")
-        evidence_text = evidence_text.replace("Nessus will", "We will")
-        evidence_text = evidence_text.replace("Nessus won't", "we won't")
-        data['vuln']['evidence'] = evidence_text
+        data['vuln']['evidence'] = evidence_text.replace("Nessus", NESSUS_REPLACEMENT)
 
         # Build list of host and ports affected by vulnerability and
         # assign that list to the vulnerability model
