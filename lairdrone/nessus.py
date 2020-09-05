@@ -196,7 +196,7 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
                                 try:
                                     # Lookups do not need to be cached since drone
                                     # only parses each unique vuln plugin once.
-                                    resp = requests.get(link)
+                                    resp = requests.get(link, verify=False)
                                     if resp.ok:
                                         reslink = resp.url
                                 except Exception as e:
