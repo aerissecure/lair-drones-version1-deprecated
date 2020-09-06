@@ -196,7 +196,7 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
                                 try:
                                     # Lookups do not need to be cached since drone
                                     # only parses each unique vuln plugin once.
-                                    resp = requests.get(link, verify=False)
+                                    resp = requests.get(link)
                                     if resp.ok:
                                         reslink = resp.url
                                 except Exception as e:
@@ -324,13 +324,20 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
                 vuln_host_map[plugin_id]['vuln'] = v
                 vuln_host_map[plugin_id]['evidence'] = dict()
 
+            # plugin_id will always be in vuln_host_map unless explicitly excluted (e.g. exclude informational)
             if plugin_id in vuln_host_map:
-                if evidence is not None:
-                    # Map host/port to shared plugin output
-                    if evidence.text not in vuln_host_map[plugin_id]['evidence']:
-                        vuln_host_map[plugin_id]['evidence'][evidence.text] = set()
-                    evidence_host = u"{0} {1}/{2}".format(host_dict['string_addr'], str(port), protocol)
-                    vuln_host_map[plugin_id]['evidence'][evidence.text].add(evidence_host)
+                # the issue is when there is a plugin where output is empty for one of the hosts.
+
+
+                evidence_text = evidence.text if evidence is not None else ''
+                # very rarely, evidence is not None, but evidence.text is None
+                evidence_text = evidence_text if evidence_text is not None else ''
+
+                # Map host/port to shared plugin output
+                if evidence_text not in vuln_host_map[plugin_id]['evidence']:
+                    vuln_host_map[plugin_id]['evidence'][evidence_text] = set()
+                evidence_host = u"{0} {1}/{2}".format(host_dict['string_addr'], str(port), protocol)
+                vuln_host_map[plugin_id]['evidence'][evidence_text].add(evidence_host)
 
                 vuln_host_map[plugin_id]['hosts'].add(
                     u"{0}:{1}:{2}".format(
