@@ -158,31 +158,31 @@ def user_info(doc):
 def evidence(doc):
     out = ""
 
-    out += "**WordPress Version Info:**\n"
+    out += "**WordPress Version Info:**\n\n"
     out += version_info(doc)
     out +=  "\n"
 
-    out += "**Plugins:**\n"
+    out += "**Plugins:**\n\n"
     out += plugin_info(doc)
     out +=  "\n"
 
-    out += "**Themes:**\n"
+    out += "**Themes:**\n\n"
     out += theme_info(doc)
     out +=  "\n"
 
-    out += "**Configuration Backups:**\n"
+    out += "**Configuration Backups:**\n\n"
     out += config_backup_info(doc)
     out +=  "\n"
 
-    out += "**Database Exports:**\n"
+    out += "**Database Exports:**\n\n"
     out += db_export_info(doc)
     out +=  "\n"
 
-    out += "**Media:**\n"
+    out += "**Media:**\n\n"
     out += media_info(doc)
     out +=  "\n"
 
-    out += "**Users:**\n"
+    out += "**Users:**\n\n"
     out += user_info(doc)
     out +=  "\n"
 
