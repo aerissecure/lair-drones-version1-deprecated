@@ -14,6 +14,8 @@ TOOL = "nessus"
 
 NESSUS_REPLACEMENT = "The testing team"
 
+DEBUG = False
+
 def parse(project, nessus_file, include_informational=False, min_note_sev=2):
     """Parses a Nessus XMLv2 file and updates the Hive database
 
@@ -40,8 +42,10 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
     vuln_host_map = dict()
 
     for host in root.iter('ReportHost'):
-
         temp_ip = host.attrib['name']
+
+        if DEBUG:
+            print temp_ip
 
         host_dict = dict(models.host_model)
         host_dict['os'] = list()
@@ -66,7 +70,7 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
                 host_dict['string_addr'] = tag.text
                 host_dict['long_addr'] = helper.ip2long(tag.text)
 
-                # If hostname was used for target, safe it for later use
+                # If hostname was used for target, save it for later use
                 if tag.text != temp_ip:
                     target_hostname = temp_ip
 
@@ -98,6 +102,9 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
             service = item.attrib['svc_name']
             evidence = item.find('plugin_output')
 
+            if DEBUG:
+                print port, title
+
             # Ignore false positive UDP services
             if protocol == "udp" and false_udp_pattern.match(service):
                 continue
@@ -121,7 +128,9 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
                     plugin_family != 'Service detection':
                 note_dict = copy.deepcopy(models.note_model)
                 note_dict['title'] = "{0} (ID{1})".format(title, str(note_id))
-                e = evidence.text.strip()
+                # evidence is not None, but evidence.text can be None
+                evidence_text = evidence.text if evidence.text is not None else ''
+                e = evidence_text.strip()
                 for line in e.split("\n"):
                     line = line.strip()
                     if line:
@@ -154,7 +163,6 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
             # IP and port information are embedded within each vulnerability
             # while ensuring no duplicate data exists.
             if plugin_id not in vuln_host_map:
-
                 v = copy.deepcopy(models.vulnerability_model)
                 v['cves'] = list()
                 v['seealsos'] = list()
@@ -191,12 +199,14 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
                         v['solution'] += '\n\nAdditional Resources:\n'
                     for sa in see_also:
                         for link in sa.text.split('\n'):
+                            if DEBUG:
+                                print "resolving: %s" % link
                             if 'nessus.org' in link:
                                 reslink = link
                                 try:
                                     # Lookups do not need to be cached since drone
                                     # only parses each unique vuln plugin once.
-                                    resp = requests.get(link)
+                                    resp = requests.get(link, timeout=5)
                                     if resp.ok:
                                         reslink = resp.url
                                 except Exception as e:
@@ -327,8 +337,6 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
             # plugin_id will always be in vuln_host_map unless explicitly excluted (e.g. exclude informational)
             if plugin_id in vuln_host_map:
                 # the issue is when there is a plugin where output is empty for one of the hosts.
-
-
                 evidence_text = evidence.text if evidence is not None else ''
                 # very rarely, evidence is not None, but evidence.text is None
                 evidence_text = evidence_text if evidence_text is not None else ''

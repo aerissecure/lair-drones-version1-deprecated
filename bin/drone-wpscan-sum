@@ -1,0 +1,316 @@
+#!/usr/bin/env python2
+# Copyright (c) 2013 Tom Steele, Dan Kottmann, FishNet Security
+# See the file license.txt for copying permission
+
+import os
+import sys
+import re
+from HTMLParser import HTMLParser
+import json
+
+sys.path.append(os.path.abspath(
+    os.path.join(os.path.dirname(__file__), '..'))
+)
+
+from optparse import OptionParser
+from urlparse import urlparse
+import urllib
+from lairdrone import api, drone_models as models
+from lairdrone import helper
+from distutils.version import LooseVersion
+
+# Scan to run:
+# wpscan --random-user-agent -v --url https://example.com --api-token <TOKEN> -v -e ap,at,tt,cb,dbe,u1-10,m1-10 -o wpscan.json -f json
+
+
+OS_WEIGHT = 0
+TOOL = "wpscan"
+
+
+# Info about detected version.
+def version_info(doc):
+    v = doc['version']
+
+    out = '''
+- Version Number: %s
+- Release Date: %s
+- Status: %s
+- Detection Method: %s
+- Detection Result: %s
+- Vulnerabilities: %s
+''' % (
+    v.get('number'),
+    v.get('release_date'),
+    v.get('status'),
+    v.get('found_by'),
+    v['interesting_entries'][0] if v.get('interesting_entries') else '',
+    len(v['vulnerabilities']) if v.get('vulnerabilities') else 0,
+    )
+
+    return out
+
+
+
+# .Vulnerabilities in WP itself at path: ['version']['vulnerabilities'].
+def wp_vulns(doc):
+    backups = doc.get('')
+    if not backups:
+        return "(none)\n"
+
+    return "**THERE IS CONTENT IN THIS BUT PARSING IS NOT COMPLETE. PLEASE IMPLEMENT AND RE-RUN.**\n"
+
+
+
+# Info about used plugins.
+def plugin_info(doc):
+    plugins = doc.get('plugins')
+    if not plugins:
+        return "(none)\n"
+
+    out = ""
+    for p in plugins.values():
+        out += '''
+%s:
+
+- Location: %s
+- Version: %s
+- Latest Version: %s
+- Last Updated: %s
+- Outdated: %s
+- Vulnerabilities: %d
+''' % (
+    p.get('slug', 'Unknown').capitalize(),
+    p.get('location', 'Unknown'),
+    p['version']['number'] if p.get('version') else 'Unknown',
+    p.get('latest_version', 'Unknown'),
+    p.get('last_updated', 'Unknown'),
+    "Yes" if p.get('outdated') else "No",
+    len(p['vulnerabilities']) if p.get('vulnerabilities') else 0,
+    )
+
+    return out
+
+
+
+# Info about used themes.
+def theme_info(doc):
+    themes = doc.get('themes')
+    if not themes:
+        return "(none)\n"
+
+    out = ""
+    for t in themes.values():
+        out += '''
+%s:
+
+- Location: %s
+- Version: %s
+- Latest Version: %s
+- Last Updated: %s
+- Outdated: %s
+- Vulnerabilities: %d
+''' % (
+    t.get('style_name', t.get('slug', 'Unknown')).capitalize(),
+    t.get('location', 'Unknown'),
+    t['version']['number'] if t.get('version') else 'Unknown',
+    t.get('latest_version', 'Unknown'),
+    t.get('last_updated', 'Unknown'),
+    "Yes" if t.get('outdated') else "No",
+    len(t['vulnerabilities']) if t.get('vulnerabilities') else 0,
+    )
+
+    return out
+
+# Info about configuration backup files.
+def config_backup_info(doc):
+    backups = doc.get('config_backups')
+    if not backups:
+        return "(none)\n"
+
+    return "**THERE IS CONTENT IN THIS BUT PARSING IS NOT COMPLETE. PLEASE IMPLEMENT AND RE-RUN.**\n"
+
+# Info about database export files.
+def db_export_info(doc):
+    exports = doc.get('db_exports')
+    if not exports:
+        return "(none)\n"
+
+    return "**THERE IS CONTENT IN THIS BUT PARSING IS NOT COMPLETE. PLEASE IMPLEMENT AND RE-RUN.**\n"
+
+# Info about media??
+def media_info(doc):
+    medias = doc.get('medias')
+    if not medias:
+        return "(none)\n"
+
+    return "**THERE IS CONTENT IN THIS BUT PARSING IS NOT COMPLETE. PLEASE IMPLEMENT AND RE-RUN.**\n"
+
+# Info about user accounts.
+def user_info(doc):
+    users = doc.get('users')
+    if not users:
+        return "(none)\n"
+
+    return "**THERE IS CONTENT IN THIS BUT PARSING IS NOT COMPLETE. PLEASE IMPLEMENT AND RE-RUN.**\n"
+
+
+
+def evidence(doc):
+    out = ""
+
+    out += "**WordPress Version Info:**\n"
+    out += version_info(doc)
+    out +=  "\n"
+
+    out += "**Plugins:**\n"
+    out += plugin_info(doc)
+    out +=  "\n"
+
+    out += "**Themes:**\n"
+    out += theme_info(doc)
+    out +=  "\n"
+
+    out += "**Configuration Backups:**\n"
+    out += config_backup_info(doc)
+    out +=  "\n"
+
+    out += "**Database Exports:**\n"
+    out += db_export_info(doc)
+    out +=  "\n"
+
+    out += "**Media:**\n"
+    out += media_info(doc)
+    out +=  "\n"
+
+    out += "**Users:**\n"
+    out += user_info(doc)
+    out +=  "\n"
+
+    return out
+
+
+
+
+def parse(project_id, wpscan_json_file, db, options):
+    """Parses a WPScan file and updates the Lair database
+
+    :param project: The project id
+    :param wpscan_json_file: The WPScan json file to be parsed
+    :param db: A database connection
+    """
+
+    file = open(wpscan_json_file)
+    doc = json.load(file)
+
+    # Create the project dictionary which acts as foundation of document
+    project = dict(models.project_model)
+    project['commands'] = list()
+    project['vulnerabilities'] = list()
+    project['project_id'] = project_id
+
+    # Temp dicts used to ensure no duplicate hosts or ports are added
+    temp_vulns = dict()
+    temp_hosts = list()
+
+    command = dict(models.command_model)
+    command['tool'] = TOOL
+    command['command'] = 'wpscan'
+    project['commands'].append(command)
+
+    v = dict(models.vulnerability_model)
+    v['cves'] = list()
+    v['plugin_ids'] = list()
+    v['identified_by'] = list()
+    v['hosts'] = list()
+    v['notes'] = list()
+
+    v['title'] = 'WordPress Reconnaissance'
+    v['cves'] = []
+    v['cvss'] = "0.1"
+    v['description'] = "As one of the world's most high-profile open-source software projects, WordPress has been a natural target for ongoing security exploits ever since it arrived on the scene. Vulnerabilities can come from a number of source, including directly through the WordPress project via inadvertent bugs and regressions in their released versions. The WordPress ecosystem can also introduce buggy and vulnerable software through themes and plugins that site maintainers may choose to install. Finally, the site administrator can introduce weaknesses by delaying upgrading to the latest secure version of WordPress, exposing configuration backups and database exports, leaking sensitive media, or otherwise introducing [security misconfigurations](https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration)."
+
+    v['evidence'] = evidence(doc)
+
+    v['solution'] = 'This finding is informational only. If there are vulnerabilities related to any of the Reconnaissance discoveries presented here, there is another finding in the report. But as always, ensure WordPress and add-ons are running the latest patched versions.'
+    # v['tags'] = ['cat:network']
+
+    # Set plugin
+    plugin_id = 'wpscan-sum' + doc['version']['number']
+    plugin = dict(models.plugin_id_model)
+    plugin['tool'] = TOOL
+    plugin['id'] = 'wpscan-sum' + doc['version']['number']
+    v['plugin_ids'].append(plugin)
+
+    # Set identified by information
+    identified = dict(models.identified_by_model)
+    identified['tool'] = TOOL
+    identified['id'] = plugin_id
+    v['identified_by'].append(identified)
+
+    # Parse url to get port and hostname
+    url = urlparse(doc['target_url'])
+    port = 80
+    if url.port:
+        port = url.port
+    elif url.scheme == 'https':
+        port = 443
+
+    # Associate host with vuln
+    host_key_dict = dict(models.host_key_model)
+    host_key_dict['string_addr'] = doc['target_ip']
+    host_key_dict['port'] = port
+    v['hosts'].append(host_key_dict)
+    tag = 'dhostname:%s->%s:%s/tcp' % (url.hostname, doc['target_ip'], port)
+    v['tags'] = [tag]
+
+    # Create host
+    host = dict(models.host_model)
+    host['os'] = list() # no OS
+    host['ports'] = list()
+    host['hostnames'] = list()
+
+    host['string_addr'] = doc['target_ip']
+    host['long_addr'] = helper.ip2long(doc['target_ip'])
+
+    if url.hostname:
+        host['hostnames'].append(url.hostname)
+
+    # Create port and associate with host
+    port_dict = dict(models.port_model)
+    port_dict['port'] = port
+    port_dict['protocol'] = models.PROTOCOL_TCP
+    port_dict['service'] = url.scheme
+    host['ports'].append(port_dict)
+
+    # Don't set an OS
+    os_dict = dict(models.os_model)
+    os_dict['tool'] = TOOL
+    host['os'].append(os_dict)
+
+    project['vulnerabilities'] = [v]
+    project['hosts'] = [host]
+
+    return project
+
+if __name__ == '__main__':
+
+    usage = "usage: %prog <project_id> <file>"
+    description = "%prog imports WPScan json files into Lair"
+
+    parser = OptionParser(usage=usage, description=description,
+                          version="%prog 0.0.1")
+
+    (options, args) = parser.parse_args()
+
+    if len(args) != 2:
+        print parser.get_usage()
+        exit(1)
+
+    # Connect to the database
+    db = api.db_connect()
+
+    project = parse(args[0], args[1], db, options)
+
+    api.save(project, db, TOOL)
+
+    exit(0)

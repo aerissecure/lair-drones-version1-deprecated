@@ -195,8 +195,6 @@ def parse(project_id, wpscan_json_file, db, options):
     project['vulnerabilities'] = [v]
     project['hosts'] = [host]
 
-    print project
-
     return project
 
 if __name__ == '__main__':
