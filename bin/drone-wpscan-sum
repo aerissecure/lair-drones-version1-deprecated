@@ -226,7 +226,7 @@ def parse(project_id, wpscan_json_file, db, options):
 
     v['title'] = 'WordPress Reconnaissance'
     v['cves'] = []
-    v['cvss'] = "0.1"
+    v['cvss'] = 0.1
     v['description'] = "As one of the world's most high-profile open-source software projects, WordPress has been a natural target for ongoing security exploits ever since it arrived on the scene. Vulnerabilities can come from a number of source, including directly through the WordPress project via inadvertent bugs and regressions in their released versions. The WordPress ecosystem can also introduce buggy and vulnerable software through themes and plugins that site maintainers may choose to install. Finally, the site administrator can introduce weaknesses by delaying upgrading to the latest secure version of WordPress, exposing configuration backups and database exports, leaking sensitive media, or otherwise introducing [security misconfigurations](https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration)."
 
     v['evidence'] = evidence(doc)
