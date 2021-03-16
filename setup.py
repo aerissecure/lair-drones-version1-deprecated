@@ -6,7 +6,7 @@ setup(
     author='Dan Kottmann, Tom Steele',
     author_email='dan.kottmann@fishnetsecurity.com, thomas.steele@fishnetsecurity.com',
     packages=['lairdrone'],
-    scripts=['bin/drone-nmap', 'bin/drone-nessus', 'bin/drone-nexpose', 'bin/drone-burp', 'bin/drone-raw', 'bin/drone-dirb'],
+    scripts=['bin/drone-nmap', 'bin/drone-nessus', 'bin/drone-nexpose', 'bin/drone-burp', 'bin/drone-raw', 'bin/drone-dirb', 'bin/drone-wpscan', 'bin/drone-wpscan-sum'],
     url='https://github.com/fishnetsecurity/lair',
     license='LICENSE.txt',
     description='Packages and scripts for use with Lair',

@@ -6,6 +6,9 @@ bin/drone-nessus
 bin/drone-nexpose
 bin/drone-nmap
 bin/drone-raw
+bin/drone-wpscan
+bin/drone-wpscan-sum
+bin/drone-raw
 lairdrone/__init__.py
 lairdrone/api.py
 lairdrone/dirb.py
