@@ -19,6 +19,8 @@ from lairdrone import api, drone_models as models
 from lairdrone import helper
 from distutils.version import LooseVersion
 
+# TODO: Add functionality for looking at "main_theme" and "plugins", enumerating those that list vulnerabilities. See "WordPress Installation with Vulnerable Add-ons" in canned, and zibby "wpscan-qa-zibby-com.json" from their 2020 test.
+
 
 OS_WEIGHT = 0
 TOOL = "wpscan"
@@ -86,7 +88,7 @@ def parse(project_id, wpscan_json_file, db, options):
             fixed_vers.append(v['fixed_in'])
 
         vuln_cve_ids = []
-        if v['references']['cve']:
+        if v['references'].has_key('cve'):
             for cve in v['references']['cve']:
                 cve_ids.append("CVE-%s" % cve)
                 vuln_cve_ids.append("CVE-%s" % cve)
@@ -128,7 +130,7 @@ def parse(project_id, wpscan_json_file, db, options):
     v['title'] = 'WordPress < %s Multiple Vulnerabilities' % less_ver
     v['cves'] = cve_ids
     v['cvss'] = cvss
-    v['description'] = description_tpl % '\n'.join(['- %s' % vuln for vuln in vulns]),
+    v['description'] = description_tpl % '\n'.join(['- %s' % vuln for vuln in vulns])
     v['evidence'] = evidence_tpl % (
         doc['target_url'],
         doc['version']['number'],
