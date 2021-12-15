@@ -21,6 +21,20 @@ from distutils.version import LooseVersion
 
 # TODO: Add functionality for looking at "main_theme" and "plugins", enumerating those that list vulnerabilities. See "WordPress Installation with Vulnerable Add-ons" in canned, and zibby "wpscan-qa-zibby-com.json" from their 2020 test.
 
+# TODO: Combine this with wpscan-sum:
+# - generate 1 vuln per supported area:
+#   - vulnerable wp version (see ncld output)
+#   - vulnerable plugins (see ncld output)
+#   - enumerable user accounts (see ncld output)
+#   - config backups (see ncld output)
+#   - main theme vulns
+#   - plugins with vulns
+#   - timthumbs
+#   - db_exports
+#   -
+#   - POSSIBLY OTHERS, check all the keys in the output. It is OK to add in warnings for things we don't yet handle yet because we don't know their shap.
+# - The goal is to have separate vulnerabilities populate for each area above. Plus we also want a summary info finding like wp-sum, but there is no reason for thit to be separate now that we're generating multiple findings from the same script.
+
 
 OS_WEIGHT = 0
 TOOL = "wpscan"
