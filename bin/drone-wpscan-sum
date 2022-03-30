@@ -395,3 +395,6 @@ if __name__ == '__main__':
 #   - [Advanced Custom Field Pro < 5.9.1 - Authenticated Reflected Cross-Site Scripting (XSS)](https://wpscan.com/vulnerability/d1e9c995-37bd-4952-b88e-945e02e3c83f)
 #   - [Advanced Custom Fields < 5.11 - Subscriber+ Arbitrary ACF Data/Field Groups View and Fields Move](https://wpscan.com/vulnerability/f322619a-e85d-4931-8785-eb9cf30cef7f)
 
+# Solution:
+#
+# Upgrade plugins that are still supported to the latest secure version. Remove any plugins that are no longer supported or that have no patches available for the referenced issues.
