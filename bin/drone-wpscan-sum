@@ -27,6 +27,29 @@ OS_WEIGHT = 0
 TOOL = "wpscan"
 
 
+def get_cves(cve_ids):
+    url = "https://raw.githubusercontent.com/olbat/nvdcve/master/nvdcve/%s.json"
+
+    cves = []
+    for cve in cve_ids:
+        print 'fetching %s' % cve
+        response = urllib.urlopen(url % cve)
+        data = json.loads(response.read())
+        cves.append(data)
+
+    return cves
+
+def cvss_severity(base_score):
+    if base_score >= 9:
+        return "Critical"
+    if base_score >= 7:
+        return "High"
+    if base_score >= 4:
+        return "Medium"
+    return "Low"
+
+
+
 # Info about detected version.
 def version_info(doc):
     v = doc['version']
@@ -69,15 +92,48 @@ def plugin_info(doc):
 
     out = ""
     for p in plugins.values():
+        vuln_out = ""
+        for v in p.get('vulnerabilities', []):
+            cve_ids = []
+            for cve in v['references'].get('cve', []):
+                cve_ids.append("CVE-%s" % cve)
+
+            cvss = 0
+            cves = get_cves(cve_ids)
+            for cve in cves:
+                score = cve.get('impact', {}).get('baseMetricV2', {}).get('cvssV2', {}).get('baseScore', 0)
+                cvss = score if score > cvss else cvss
+            url = ""
+            for wpvulndb_ref in v['references'].get('wpvulndb', []):
+                url = "https://wpscan.com/vulnerability/" + wpvulndb_ref
+                break
+            if url == '':
+                for url_ref in v['references'].get('url', []):
+                    url = url_ref
+                    break
+            if url == '' and len(cves) > 0:
+                cve_id = cves[0]['cve']['CVE_data_meta']['ID']
+                url = "https://nvd.nist.gov/vuln/detail/" + cve_id
+
+            if url == '':
+                url = 'https://wpscan.com'
+
+            vuln_out += '  - [%s])(%s): %s severity (%s)\n' % (
+                v.get('title', 'Untitled'),
+                url,
+                cvss_severity(cvss),
+                cvss,
+                )
+
         out += '''
-%s:
+**%s**:
 
 - Location: %s
 - Version: %s
 - Latest Version: %s
 - Last Updated: %s
 - Outdated: %s
-- Vulnerabilities: %d
+- Vulnerabilities: %s
 ''' % (
     p.get('slug', 'Unknown').capitalize(),
     p.get('location', 'Unknown'),
@@ -85,7 +141,7 @@ def plugin_info(doc):
     p.get('latest_version', 'Unknown'),
     p.get('last_updated', 'Unknown'),
     "Yes" if p.get('outdated') else "No",
-    len(p['vulnerabilities']) if p.get('vulnerabilities') else 0,
+    0 if vuln_out == "" else "\n"+vuln_out,
     )
 
     return out
@@ -227,7 +283,7 @@ def parse(project_id, wpscan_json_file, db, options):
     v['title'] = 'WordPress Reconnaissance'
     v['cves'] = []
     v['cvss'] = 0.1
-    v['description'] = "As one of the world's most high-profile open-source software projects, WordPress has been a natural target for ongoing security exploits ever since it arrived on the scene. Vulnerabilities can come from a number of source, including directly through the WordPress project via inadvertent bugs and regressions in their released versions. The WordPress ecosystem can also introduce buggy and vulnerable software through themes and plugins that site maintainers may choose to install. Finally, the site administrator can introduce weaknesses by delaying upgrading to the latest secure version of WordPress, exposing configuration backups and database exports, leaking sensitive media, or otherwise introducing [security misconfigurations](https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration)."
+    v['description'] = "As one of the world's most high-profile open-source software projects, WordPress has been a natural target for ongoing security exploits ever since it arrived on the scene. Vulnerabilities can come from a number of sources, including directly through the WordPress project via inadvertent bugs and regressions in their released versions. The WordPress ecosystem can also introduce buggy and vulnerable software through themes and plugins that site maintainers may choose to install. Finally, the site administrator can introduce weaknesses by delaying upgrading to the latest secure version of WordPress, exposing configuration backups and database exports, leaking sensitive media, or otherwise introducing [security misconfigurations](https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration)."
 
     v['evidence'] = evidence(doc)
 
@@ -314,3 +370,28 @@ if __name__ == '__main__':
     api.save(project, db, TOOL)
 
     exit(0)
+
+
+# Title: Vulnerable WordPress Plugins
+
+# Description: The WordPress ecosystem can introduce buggy and vulnerable software through plugins that site maintainers may choose to install. Because plugins hook into the core WordPress code, they can introduce bugs that affect the entire site. This may include data leakage or even full site compromise.
+
+# Evidence:
+#
+# The WordPress installation lives at the following URL:
+#
+# <https://www.lillypulitzer.com/resort365>
+#
+# We identified the following vulnerable WordPress plugins:
+#
+# **advanced-custom-fields-pro:**
+#
+# - Location: https://www.lillypulitzer.com/resort365/wp-content/plugins/elementor-pro/
+# - Version: 2.4.8
+# - Latest Version: None
+# - Last Updated: None
+# - Outdated: No
+# - Vulnerabilities:
+#   - [Advanced Custom Field Pro < 5.9.1 - Authenticated Reflected Cross-Site Scripting (XSS)](https://wpscan.com/vulnerability/d1e9c995-37bd-4952-b88e-945e02e3c83f)
+#   - [Advanced Custom Fields < 5.11 - Subscriber+ Arbitrary ACF Data/Field Groups View and Fields Move](https://wpscan.com/vulnerability/f322619a-e85d-4931-8785-eb9cf30cef7f)
+

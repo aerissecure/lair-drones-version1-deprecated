@@ -36,6 +36,36 @@ from distutils.version import LooseVersion
 # - The goal is to have separate vulnerabilities populate for each area above. Plus we also want a summary info finding like wp-sum, but there is no reason for thit to be separate now that we're generating multiple findings from the same script.
 
 
+# Here is the wording used for manually entering some vulns:
+
+# Vulnerable WordPress Plugins (CVE)
+# The WordPress ecosystem can introduce buggy and vulnerable software through plugins that site maintainers may choose to install. Because plugins hook into the core WordPress code, they can introduce bugs that affect the entire site. This may include data leakage or even full site compromise.
+# We identified the following vulnerable WordPress plugins:
+# (Note, for versions that don't have the number detected, we'll want to note that we couldn't tell the exact version, but there are the following known vulnerabilities. ACTUALLY, i think it is best to list all of these without other info, as a courtesy. Say something like, "following are plugins that we detected were in use and that have known vulnerabilities, but for which we were enable to determine the version number:", and then just list them. There could be distinction in this group between those without a known "latest_version" and those with. Without a latest known version could mean that it haven't even been updated...?)
+## Upgrade plugins that are still supported to the lastest secure version. Remove any plugins that are no longer supported or that have not yet patched the referenced issues.
+
+# Accessible WordPress Configuration File Backups (8)
+# WordPress has a special file named wp-config.php that stores sensitive configuration information for your website.
+#
+# By default, the wp-config.php file stores the following information:
+
+# - MySQL settings
+# - Secret keys
+# - Database table prefix
+# - ABSPATH
+
+# Developers can also store other sensitive information in the file.
+
+# The wp-config.php file can be manually backed up, or often times, the file can be automatically backed up by editing software without warning the developer when this is done. This could leave the file and its contents exposed to attackers.
+
+# We identified the following backup file:
+#  - https://newcloudnetworks.com/wp-config.bak
+
+# If the exposed configuration file values match (or have ever matched) the values used for the live website, the information should be considered leaked and changed immediately. We recommend changing at a minimum the secret keys and database password. All backup files should be deleted and a review should be conducted to identify how backup files are being created and exposed and corrective actions taken.
+
+# See Also: https://blog.wpscan.com/wordpress-configuration-file-backups/
+
+
 OS_WEIGHT = 0
 TOOL = "wpscan"
 

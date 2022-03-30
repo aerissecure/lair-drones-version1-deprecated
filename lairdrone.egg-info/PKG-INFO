@@ -1,0 +1,10 @@
+Metadata-Version: 1.0
+Name: lairdrone
+Version: 1.0.1
+Summary: Packages and scripts for use with Lair
+Home-page: https://github.com/fishnetsecurity/lair
+Author: Dan Kottmann, Tom Steele
+Author-email: dan.kottmann@fishnetsecurity.com, thomas.steele@fishnetsecurity.com
+License: LICENSE.txt
+Description: UNKNOWN
+Platform: UNKNOWN
