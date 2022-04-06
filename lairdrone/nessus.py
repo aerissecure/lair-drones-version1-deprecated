@@ -41,6 +41,16 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
     # Used to maintain a running list of host:port vulnerabilities by plugin
     vuln_host_map = dict()
 
+    # Structure:
+    # vuln_host_map = {
+    #     plugin_id: {
+    #         'hosts': []
+    #         'tags'
+    #         'vuln': vuln-object
+    #         'evidence': [evidence_text] # unique set of evidence texts
+    #     }
+    # }
+
     for host in root.iter('ReportHost'):
         temp_ip = host.attrib['name']
 
@@ -169,6 +179,7 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
                 v['plugin_ids'] = list()
                 v['identified_by'] = list()
                 v['hosts'] = list()
+                v['tags'] = []
 
                 # Set the title
                 v['title'] = title
@@ -333,6 +344,8 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
                 vuln_host_map[plugin_id]['hosts'] = set()
                 vuln_host_map[plugin_id]['vuln'] = v
                 vuln_host_map[plugin_id]['evidence'] = dict()
+                vuln_host_map[plugin_id]['hostnames'] = dict()
+                vuln_host_map[plugin_id]['ips'] = set()
 
             # plugin_id will always be in vuln_host_map unless explicitly excluted (e.g. exclude informational)
             if plugin_id in vuln_host_map:
@@ -347,22 +360,30 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
                 evidence_host = u"{0} {1}/{2}".format(host_dict['string_addr'], str(port), protocol)
                 vuln_host_map[plugin_id]['evidence'][evidence_text].add(evidence_host)
 
-                vuln_host_map[plugin_id]['hosts'].add(
-                    u"{0}:{1}:{2}".format(
-                        host_dict['string_addr'],
-                        str(port),
-                        protocol
-                    )
+                hostpp = u"{0}:{1}:{2}".format(
+                    host_dict['string_addr'],
+                    str(port),
+                    protocol
                 )
 
-            if not vuln_host_map[plugin_id].get('tags'):
-                vuln_host_map[plugin_id]['vuln']['tags'] = []
 
-            if target_hostname:
-                # to use dhostname instead of hostname, we'd need to know that the IP
-                # wasn't explicitly scanned also.
-                htag = "hostname:%s->%s:%s/%s" % (target_hostname, host_dict['string_addr'], port, protocol)
-                vuln_host_map[plugin_id]['vuln']['tags'].append(htag)
+                vuln_host_map[plugin_id]['hosts'].add(hostpp)
+
+                if target_hostname:
+                    if not hostpp in vuln_host_map[plugin_id]['hostnames']:
+                        vuln_host_map[plugin_id]['hostnames'][hostpp] = set()
+                    vuln_host_map[plugin_id]['hostnames'][hostpp].add(target_hostname)
+                else:
+                    vuln_host_map[plugin_id]['ips'].add(hostpp)
+
+            # if target_hostname:
+            #     # print "issue:", vuln_host_map[plugin_id]['vuln']['title'], 'target_hostname:', target_hostname
+            #     # to use dhostname instead of hostname, we'd need to know that the IP
+            #     # wasn't explicitly scanned also.
+            #     htag = "hostname:%s->%s:%s/%s" % (target_hostname, host_dict['string_addr'], port, protocol)
+            #     vuln_host_map[plugin_id]['vuln']['tags'].append(htag)
+
+            #     # print '  issue full tags:', vuln_host_map[plugin_id]['vuln']['tags']
 
         # In the event no IP was found, use the 'name' attribute of
         # the 'ReportHost' element
@@ -465,6 +486,13 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
             host_key_dict['port'] = int(port)
             host_key_dict['protocol'] = protocol
             data['vuln']['hosts'].append(host_key_dict)
+
+            for hostname in data['hostnames'].get(key, set()):
+                tag = "hostname:%s->%s:%s/%s" % (hostname, string_addr, port, protocol)
+                if key not in data['ips']:
+                    tag = 'd'+tag
+
+                data['vuln']['tags'].append(tag)
 
         project_dict['vulnerabilities'].append(data['vuln'])
 

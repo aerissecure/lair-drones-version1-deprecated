@@ -118,7 +118,7 @@ def plugin_info(doc):
             if url == '':
                 url = 'https://wpscan.com'
 
-            vuln_out += '  - [%s])(%s): %s severity (%s)\n' % (
+            vuln_out += '  - [%s](%s): %s severity (%s)\n' % (
                 v.get('title', 'Untitled'),
                 url,
                 cvss_severity(cvss),
@@ -128,7 +128,7 @@ def plugin_info(doc):
         out += '''
 **%s**:
 
-- Location: %s
+- Location: <%s>
 - Version: %s
 - Latest Version: %s
 - Last Updated: %s

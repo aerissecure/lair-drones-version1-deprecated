@@ -182,7 +182,7 @@ def parse(project_id, wpscan_json_file, db, options):
         doc['version']['confidence'],
         fixed_ver,
     )
-    v['solution'] = 'Updated to the latest version of WordPress, or the referenced fixed version.'
+    v['solution'] = 'Update to the latest version of WordPress, or the referenced fixed version.'
     # v['tags'] = ['cat:network']
 
     # Set plugin
