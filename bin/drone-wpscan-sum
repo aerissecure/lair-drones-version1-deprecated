@@ -22,9 +22,10 @@ from distutils.version import LooseVersion
 # Scan to run:
 # wpscan --random-user-agent -v --url https://example.com --api-token <TOKEN> -v -e ap,at,tt,cb,dbe,u1-10,m1-10 -o wpscan.json -f json
 
-
 OS_WEIGHT = 0
 TOOL = "wpscan"
+CVSS = 0.1
+CVES = []
 
 
 def get_cves(cve_ids):
@@ -34,6 +35,11 @@ def get_cves(cve_ids):
     for cve in cve_ids:
         print 'fetching %s' % cve
         response = urllib.urlopen(url % cve)
+        if response.getcode() == 404:
+            print '  ...Not found'
+            continue
+        global CVES
+        CVES.append(cve)
         data = json.loads(response.read())
         cves.append(data)
 
@@ -92,6 +98,7 @@ def plugin_info(doc):
 
     out = ""
     for p in plugins.values():
+        print 'PLUGIN START:',  p.get('slug', 'Unknown').capitalize(), '\n'
         vuln_out = ""
         for v in p.get('vulnerabilities', []):
             cve_ids = []
@@ -118,6 +125,11 @@ def plugin_info(doc):
             if url == '':
                 url = 'https://wpscan.com'
 
+            global CVSS
+            if CVSS < cvss:
+                # print 'setting cvss to:', cvss
+                CVSS = cvss
+
             vuln_out += '  - [%s](%s): %s severity (%s)\n' % (
                 v.get('title', 'Untitled'),
                 url,
@@ -125,8 +137,11 @@ def plugin_info(doc):
                 cvss,
                 )
 
+# We could say something like this:
+# Note that we were unable to determine the version numbers of some in-use plugins with known vulnerabilities. We have included them below but recognize they may be up-to-date.
+
         out += '''
-**%s**:
+%s:
 
 - Location: <%s>
 - Version: %s
@@ -143,6 +158,8 @@ def plugin_info(doc):
     "Yes" if p.get('outdated') else "No",
     0 if vuln_out == "" else "\n"+vuln_out,
     )
+
+    # print 'PLUGIN OUT:',  out, '\n'
 
     return out
 
@@ -207,7 +224,41 @@ def user_info(doc):
     if not users:
         return "(none)\n"
 
-    return "**THERE IS CONTENT IN THIS BUT PARSING IS NOT COMPLETE. PLEASE IMPLEMENT AND RE-RUN.**\n"
+    confirms = {} # maps confirmation name to a URL of an interesting entry
+    usernames = []
+
+    for username, data in users.items():
+        usernames.append(username)
+        for method, mdata in data.get("confirmed_by", {}).items():
+            if method in confirms:
+                val = confirms[method]
+                # if the method value in confirms is not empty, skip method since we are done.
+                if val != '':
+                    continue
+                for entry in mdata.get("interesting_entries", []):
+                    # if we find a non-empty values, update the method value in confirms.
+                    if entry != '':
+                        confirms[method] = entry
+            else:
+                val = ''
+                for entry in mdata.get("interesting_entries", []):
+                    if entry != '':
+                        val = entry
+                confirms[method] = val
+
+    out = ''
+    for un in usernames:
+        out += '- `%s`\n' % un
+
+    if len(confirms) > 0:
+        out += '\nWe identified the above user accounts with the following methods:\n\n'
+        for confirm, evidence in confirms.items():
+            out += '- %s' % confirm.replace(' (Aggressive Detection)', '')
+            if evidence != '':
+                out += ': [example URL](%s)' % evidence
+            out += '\n'
+
+    return out
 
 
 
@@ -281,14 +332,16 @@ def parse(project_id, wpscan_json_file, db, options):
     v['notes'] = list()
 
     v['title'] = 'WordPress Reconnaissance'
-    v['cves'] = []
-    v['cvss'] = 0.1
     v['description'] = "As one of the world's most high-profile open-source software projects, WordPress has been a natural target for ongoing security exploits ever since it arrived on the scene. Vulnerabilities can come from a number of sources, including directly through the WordPress project via inadvertent bugs and regressions in their released versions. The WordPress ecosystem can also introduce buggy and vulnerable software through themes and plugins that site maintainers may choose to install. Finally, the site administrator can introduce weaknesses by delaying upgrading to the latest secure version of WordPress, exposing configuration backups and database exports, leaking sensitive media, or otherwise introducing [security misconfigurations](https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration)."
 
     v['evidence'] = evidence(doc)
 
     v['solution'] = 'This finding is informational only. If there are vulnerabilities related to any of the Reconnaissance discoveries presented here, there is another finding in the report. But as always, ensure WordPress and add-ons are running the latest patched versions.'
     # v['tags'] = ['cat:network']
+
+    v['cves'] = CVES
+    v['cvss'] = CVSS
+
 
     # Set plugin
     plugin_id = 'wpscan-sum' + doc['version']['number']
