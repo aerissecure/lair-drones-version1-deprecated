@@ -16,6 +16,26 @@ NESSUS_REPLACEMENT = "The testing team"
 
 DEBUG = False
 
+def is_paranoid(plugin_id):
+    u = 'https://www.tenable.com/_next/data/scyLvOSB2Ws0HjYZ9waUO/en/plugins/search.json?q=enable_paranoid_mode%%3A%%28true%%29+AND+script_id%%3A%%28%s%%29&sort=&page=1' % plugin_id
+    try:
+        resp = requests.get(u, timeout=5)
+        if not resp.ok:
+            print("Bad response for:", u)
+            return False
+
+        if resp.json().get('pageProps', {}).get('total', 0) > 0:
+            print("paranoid:", plugin_id)
+            return True
+
+        # print("not paranoid:", plugin_id, u)
+        return False
+
+    except Exception as e:
+        print('Error checking paranoid on {}: {}\n'.format(plugin_id, str(e)))
+        return False
+
+
 def parse(project, nessus_file, include_informational=False, min_note_sev=2):
     """Parses a Nessus XMLv2 file and updates the Hive database
 
@@ -475,6 +495,10 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
             evidence_text = evidence_text[2:]
 
         data['vuln']['evidence'] = evidence_text.replace("Nessus", NESSUS_REPLACEMENT)
+
+        paranoid = is_paranoid(plugin_id)
+        if paranoid:
+            data['vuln']['tags'].append('paranoid')
 
         # Build list of host and ports affected by vulnerability and
         # assign that list to the vulnerability model
