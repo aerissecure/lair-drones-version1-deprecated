@@ -12,12 +12,24 @@ from lairdrone import helper
 OS_WEIGHT = 75
 TOOL = "nessus"
 
+PLUGINSEARCHKEY = ""
+
 NESSUS_REPLACEMENT = "The testing team"
 
 DEBUG = False
 
 def is_paranoid(plugin_id):
-    u = 'https://www.tenable.com/_next/data/scyLvOSB2Ws0HjYZ9waUO/en/plugins/search.json?q=enable_paranoid_mode%%3A%%28true%%29+AND+script_id%%3A%%28%s%%29&sort=&page=1' % plugin_id
+    global PLUGINSEARCHKEY
+    if not PLUGINSEARCHKEY:
+        r = requests.get('https://www.tenable.com/plugins', timeout=5)
+        match = re.search('"buildId":"([^"]*)"', r.text)
+        if match:
+            PLUGINSEARCHKEY = match.group(1)
+        else:
+            print("No match for 'buildId' regex for plugins search")
+            raise
+
+    u = 'https://www.tenable.com/_next/data/%s/en/plugins/search.json?q=enable_paranoid_mode%%3A%%28true%%29+AND+script_id%%3A%%28%s%%29&sort=&page=1' % (PLUGINSEARCHKEY, plugin_id)
     try:
         resp = requests.get(u, timeout=5)
         if not resp.ok:
