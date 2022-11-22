@@ -109,6 +109,8 @@ def plugin_info(doc):
             cves = get_cves(cve_ids)
             for cve in cves:
                 score = cve.get('impact', {}).get('baseMetricV2', {}).get('cvssV2', {}).get('baseScore', 0)
+                if score == 0:
+                    score = cve.get('impact', {}).get('baseMetricV3', {}).get('cvssV3', {}).get('baseScore', 0)
                 cvss = score if score > cvss else cvss
             url = ""
             for wpvulndb_ref in v['references'].get('wpvulndb', []):
