@@ -5,6 +5,8 @@
 import os
 import sys
 import re
+import random
+import string
 from HTMLParser import HTMLParser
 try:
     import xml.etree.ElementTree as et
@@ -393,6 +395,10 @@ def parse(project, burp_file, db, options):
         type_elem = issue_elem.find('type')
         if type_elem is not None:
             plugin_id = type_elem.text
+            if type_elem.text == "134217728":
+                print "\n\nWARNING: Detected Burp extension generated issue. All issues of this type share the same ID. We will append a random value to the ID which means duplicate issues will arise if parsed more than once.\n\n"
+                plugin_id = plugin_id + "-" + ''.join(random.choice(string.ascii_lowercase) for i in range(5))
+                print plugin_id
 
         if plugin_id not in temp_issues:
             temp_issues[plugin_id] = []
