@@ -396,9 +396,15 @@ def parse(project, burp_file, db, options):
         if type_elem is not None:
             plugin_id = type_elem.text
             if type_elem.text == "134217728":
-                print "\n\nWARNING: Detected Burp extension generated issue. All issues of this type share the same ID. We will append a random value to the ID which means duplicate issues will arise if parsed more than once.\n\n"
-                plugin_id = plugin_id + "-" + ''.join(random.choice(string.ascii_lowercase) for i in range(5))
-                print plugin_id
+                # For these we need persistent IDs for each type we want to group otherwise things like retire.js won't group propertly.
+                if issue['name'].startswith('Vulnerable version of the library'):
+                    plugin_id = 'retirejs01'
+                if issue['name'].startswith('CSP: The domain is hosting user content'):
+                    plugin_id = 'csp-domain-uc01'
+                if plugin_id == "134217728":
+                    print "\n\nWARNING: Issue is using a Burp extension generated issue type (plugin_id) which may conflict with other project vulns and not be added as a result --",  issue['name'] + '\n\n'
+                else:
+                    print "CHANGED:", issue['name'], plugin_id
 
         if plugin_id not in temp_issues:
             temp_issues[plugin_id] = []
