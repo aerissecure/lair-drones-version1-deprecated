@@ -104,3 +104,12 @@ drone-run drone-burp aAZrpLuJ9TBHDfNtx ./kali/file.xml
 ```
 drone-run drone-burp aAZrpLuJ9TBHDfNtx file.xml
 ```
+
+### Running without script
+
+```
+docker run --rm --network host -v "$(pwd):/data" -e MONGO_URL="${MONGO_URL}" lair-drones-python2 drone-burp aYZrpLuJ9TBHDfNtx /data/test_export.xml
+```
+
+
+
