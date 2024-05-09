@@ -258,8 +258,10 @@ def process_default(plugin_id, issues):
 
     v['title'] = issues[0]['name'].title()
     v['cvss'] = get_severity(issues[0]['severity'])
-    v['description'] = strip_tags(issues[0]['issue_background']).replace('\n', '\n\n')
-    v['solution'] = strip_tags(issues[0]['remediation_background']).replace('\n', '\n\n')
+    if issues[0]['issue_background']:
+        v['description'] = strip_tags(issues[0]['issue_background']).replace('\n', '\n\n')
+    if issues[0]['remediation_background']:
+        v['solution'] = strip_tags(issues[0]['remediation_background']).replace('\n', '\n\n')
     if issues[0]['references']:
         v['solution'] += '\n\nAdditional Resources:\n\n'
         v['solution'] +=  '\n'.join(['- <%s>' % ref for ref in issues[0]['references']])

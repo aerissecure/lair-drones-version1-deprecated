@@ -32,6 +32,11 @@ def is_paranoid(plugin_id):
     u = 'https://www.tenable.com/_next/data/%s/en/plugins/search.json?q=enable_paranoid_mode%%3A%%28true%%29+AND+script_id%%3A%%28%s%%29&sort=&page=1' % (PLUGINSEARCHKEY, plugin_id)
     try:
         resp = requests.get(u, timeout=5)
+
+        if resp.status_code == 404:
+            # fail silently since 404 is now returned when no results.
+            return False
+
         if not resp.ok:
             print("Bad response for:", u)
             return False
