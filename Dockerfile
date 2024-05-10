@@ -8,7 +8,7 @@ RUN apt-get update
 RUN apt-get install -y python
 
 # Install wget and other necessary tools
-RUN apt-get install -y wget
+RUN apt-get install -y wget expect
 
 # Download get-pip script
 RUN wget https://bootstrap.pypa.io/pip/2.7/get-pip.py
