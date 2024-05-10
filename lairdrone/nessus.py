@@ -6,6 +6,7 @@ import xml.etree.ElementTree as et
 import re
 import copy
 import requests
+import os
 from lairdrone import drone_models as models
 from lairdrone import helper
 
@@ -16,7 +17,9 @@ PLUGINSEARCHKEY = ""
 
 NESSUS_REPLACEMENT = "The testing team"
 
-DEBUG = False
+DEBUG = os.environ.get('DRONE_DEBUG') != ''
+
+nessus_links = {}
 
 def is_paranoid(plugin_id):
     global PLUGINSEARCHKEY
@@ -249,7 +252,12 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
                         for link in sa.text.split('\n'):
                             if DEBUG:
                                 print "resolving: %s" % link
-                            if 'nessus.org' in link:
+                            if link in nessus_links:
+                                if DEBUG:
+                                    print "link is in cache: %s -> %s" % (link, nessus_links[link])
+                                v['solution'] += "\n- <" + nessus_links[link] + ">"
+
+                            elif 'nessus.org' in link:
                                 reslink = link
                                 try:
                                     # Lookups do not need to be cached since drone
@@ -257,8 +265,10 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
                                     resp = requests.get(link, timeout=10)
                                     if resp.ok:
                                         reslink = resp.url
+                                        nessus_links[link] = reslink
                                 except Exception as e:
                                     print('Omitting link "{}" which failed to resolve: {}\n'.format(link, str(e)))
+                                    nessus_links[link] = link
                                     continue
 
                                 v['solution'] += "\n- <" + reslink + ">"
@@ -513,7 +523,11 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
 
         data['vuln']['evidence'] = evidence_text.replace("Nessus", NESSUS_REPLACEMENT)
 
+        if DEBUG:
+            print "checking paranoid for: %s" % plugin_id
         paranoid = is_paranoid(plugin_id)
+        if DEBUG:
+            print "...done"
         if paranoid:
             data['vuln']['tags'].append('paranoid')
 
