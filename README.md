@@ -56,36 +56,36 @@ Incorporate this function into your `.zshrc` file to enable running the Docker c
 
 ```
 function drone-run() {
-    # First, determine the program to run and the file path
     local program="$1"
-    shift  # Remove the first argument which is the program name
+    shift  # Remove the program name
 
-    # Determine the path of the last argument which should be the file path
-    local file="${@: -1}"  # Get the last argument as the file
+    local args=()  # To hold non-file arguments
+    local file=""
+    local file_dir=""
 
-    # Determine the directory based on the file path
-    if [[ "$file" == /* ]]; then
-        file_dir=$(dirname "$file")
-    elif [[ "$file" == ./* ]]; then
-        # Handle relative path with ./
-        file_dir=$(pwd)/$(dirname "$file")
-        file_dir=${file_dir/.\//}  # Remove leading ./
-    else
-        # Handle file in the current directory or a simple relative path
-        file_dir=$(pwd)
-    fi
+    # Process arguments to separate file path and others
+    for arg in "$@"; do
+        if [[ "$arg" == *.* ]]; then  # Detects any file with an extension
+            file="$arg"
+            [[ "$file" == /* ]] && file_dir=$(dirname "$file") || file_dir=$(pwd)/$(dirname "$file")
+            [[ "$file" != /* && "$file" != ./* ]] && file="$(pwd)/$file"
+            args+=("/data/$(basename "$file")")  # Append modified file path for Docker
+        else
+            args+=("$arg")
+        fi
+    done
 
     # Check if the specified file exists
-    if [[ ! -f "$file" ]]; then
+    if [[ "$file" != "" && ! -f "$file" ]]; then
         echo "Error: File $file does not exist."
-        return 1  # Exit the function with an error
+        return 1
     fi
 
     echo "Mounting ${file_dir} to /data in container"
     echo "Accessing file as /data/$(basename "$file")"
 
-    # Execute the Docker command, passing all remaining arguments
-    docker run --rm --network host -v "${file_dir}:/data" -e MONGO_URL="${MONGO_URL}" lair-drones-python2 "$program" "${@:1:-1}" "/data/$(basename "$file")"
+    # Execute the Docker command
+    docker run --rm --network host -v "${file_dir}:/data" -e MONGO_URL="${MONGO_URL}" -e DRONE_DEBUG="True" lair-drones-python2 unbuffer "$program" "${args[@]}"
 }
 ```
 
