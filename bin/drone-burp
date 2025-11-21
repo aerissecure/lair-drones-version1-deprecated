@@ -58,6 +58,17 @@ def strip_tags(html):
     txt = re.sub('\n\n\n(\s*)', '\n\n', txt)
     return txt
 
+def to_kebab_case(text):
+    """Convert a string to kebab-case for use as plugin_id"""
+    if not text:
+        return ''
+    # Convert to lowercase, replace spaces and special chars with hyphens
+    text = re.sub(r'[^\w\s-]', '', text.lower())
+    text = re.sub(r'[-\s]+', '-', text)
+    # Remove leading/trailing hyphens
+    text = text.strip('-')
+    return text
+
 # add_issue_hosts adds the host for each issue in the list of issues to the vuln.
 def add_issue_hosts(vuln, issues):
     for issue in issues:
@@ -401,12 +412,12 @@ def parse(project, burp_file, db, options):
                 # For these we need persistent IDs for each type we want to group otherwise things like retire.js won't group propertly.
                 if issue['name'].startswith('Vulnerable version of the library'):
                     plugin_id = 'retirejs01'
-                if issue['name'].startswith('CSP: The domain is hosting user content'):
+                elif issue['name'].startswith('CSP: The domain is hosting user content'):
                     plugin_id = 'csp-domain-uc01'
-                if plugin_id == "134217728":
-                    print "\n\nWARNING: Issue is using a Burp extension generated issue type (plugin_id) which may conflict with other project vulns and not be added as a result --",  issue['name'] + '\n\n'
                 else:
-                    print "CHANGED:", issue['name'], plugin_id
+                    # Convert issue name to kebab-case as fallback plugin_id
+                    plugin_id = to_kebab_case(issue['name'])
+                    print "CHANGED Plugin ID:", type_elem.text, "->", plugin_id
 
         if plugin_id not in temp_issues:
             temp_issues[plugin_id] = []

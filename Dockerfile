@@ -1,6 +1,10 @@
 # Use an older version of Debian where Python 2 is still available
 FROM debian:buster
 
+# Update sources to use archive repositories (Buster is EOL)
+RUN sed -i 's/deb.debian.org/archive.debian.org/g' /etc/apt/sources.list && \
+    sed -i '/security.debian.org/d' /etc/apt/sources.list
+
 # Update the package list
 RUN apt-get update
 

@@ -19,8 +19,9 @@ def parse_grep(project, resource):
     :param resource: The Nmap grepable file or string to be parsed
     """
     command_pattern = re.compile('as: (.+)\n')
-    host_status_pattern = re.compile('Host: ([0-9.]*)\s(.+)\sStatus: (\w+)')
-    host_service_line = re.compile('Host: ([0-9.]*).*?Ports:(.*)')
+    # Match both IPv4 (digits and dots) and IPv6 (hex digits and colons)
+    host_status_pattern = re.compile('Host: ([0-9a-fA-F:.]+)\s(.+)\sStatus: (\w+)')
+    host_service_line = re.compile('Host: ([0-9a-fA-F:.]+).*?Ports:(.*)')
     host_service_pattern = re.compile('\s(\d+)\/([^/]+)?\/([^/]+)?\/([^/]+)?\/([^/]+)?\/([^/]+)?\/([^/]+)?\/')
     contents = ''
 
@@ -63,6 +64,16 @@ def parse_grep(project, resource):
 
         # Parse the host IP
         host_dict['string_addr'] = host_ip
+        # Set long_addr: convert IPv4 to long, set IPv6 to 0
+        if ':' in host_ip:
+            # IPv6 address
+            host_dict['long_addr'] = 0
+        else:
+            # IPv4 address
+            try:
+                host_dict['long_addr'] = helper.ip2long(host_ip)
+            except:
+                host_dict['long_addr'] = 0
 
         # Parse the host name
         host_dict['hostnames'].append(host_name.strip('() '))
@@ -151,6 +162,9 @@ def parse_xml(project, resource):
             if addr.attrib['addrtype'] == 'ipv4':
                 host_dict['string_addr'] = addr.attrib['addr']
                 host_dict['long_addr'] = helper.ip2long(addr.attrib['addr'])
+            elif addr.attrib['addrtype'] == 'ipv6':
+                host_dict['string_addr'] = addr.attrib['addr']
+                host_dict['long_addr'] = 0  # IPv6 cannot be converted to 32-bit integer
             elif addr.attrib['addrtype'] == 'mac':
                 host_dict['mac_addr'] = addr.attrib['addr']
 

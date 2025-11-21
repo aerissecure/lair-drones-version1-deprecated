@@ -118,7 +118,16 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
             # IP address tag
             if tag.attrib['name'] == 'host-ip':
                 host_dict['string_addr'] = tag.text
-                host_dict['long_addr'] = helper.ip2long(tag.text)
+                # Set long_addr: convert IPv4 to long, set IPv6 to 0
+                if ':' in tag.text:
+                    # IPv6 address
+                    host_dict['long_addr'] = 0
+                else:
+                    # IPv4 address
+                    try:
+                        host_dict['long_addr'] = helper.ip2long(tag.text)
+                    except:
+                        host_dict['long_addr'] = 0
 
                 # If hostname was used for target, save it for later use
                 if tag.text != temp_ip:
@@ -436,7 +445,16 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
         # the 'ReportHost' element
         if not host_dict['string_addr']:
             host_dict['string_addr'] = temp_ip
-            host_dict['long_addr'] = helper.ip2long(temp_ip)
+            # Set long_addr: convert IPv4 to long, set IPv6 to 0
+            if ':' in temp_ip:
+                # IPv6 address
+                host_dict['long_addr'] = 0
+            else:
+                # IPv4 address
+                try:
+                    host_dict['long_addr'] = helper.ip2long(temp_ip)
+                except:
+                    host_dict['long_addr'] = 0
 
         # Add all encountered ports to the host
         host_dict['ports'].extend(ports_processed.values())
@@ -534,7 +552,9 @@ def parse(project, nessus_file, include_informational=False, min_note_sev=2):
         # Build list of host and ports affected by vulnerability and
         # assign that list to the vulnerability model
         for key in data['hosts']:
-            (string_addr, port, protocol) = key.split(':')
+            # Use rsplit to handle IPv6 addresses which contain colons
+            # Split from right: last 2 parts are port and protocol, rest is IP address
+            (string_addr, port, protocol) = key.rsplit(':', 2)
 
             host_key_dict = dict(models.host_key_model)
             host_key_dict['string_addr'] = string_addr
